@@ -1,5 +1,5 @@
 // ===== STEP: paste your Apps Script Web App URL here =====
-const API = 'https://script.google.com/macros/s/AKfycbxN6XqdcOQvMJ5VfMGH-HimwusHMiC9SezmYYTAV_GufGypPMGelhNYLbUnLHZ6ALFQ/exec';
+const API = 'https://script.google.com/macros/s/AKfycbwfQfyqVuFbvYs6S5Cf0Y7rj9hkdR5ydXkqflLAPAXGborC0i-gV9qP9sIuKdsoe7yN/exec';
 const KEY = 'pivotaalstock2026';
 
 const $ = (s, el = document) => el.querySelector(s);
