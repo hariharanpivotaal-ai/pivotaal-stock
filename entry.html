@@ -1,0 +1,104 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1"><title>Stock entry</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1 id="title">Production entry</h1><button class="chip" id="user"></button></header>
+<main hidden>
+<div class="card"><h2>Select SKU</h2><div id="picker"></div></div>
+<div class="card" id="form" hidden>
+  <div class="sel" id="sel"></div>
+  <div id="srcBox" hidden>
+    <label>Stock coming from</label>
+    <div class="seg" id="src"><button data-v="PROD" class="on">Production</button><button data-v="DIRECT">Direct ready stock</button></div>
+    <p class="hint" id="srcHint"></p>
+  </div>
+  <label>Size-wise qty <span class="hint"><span class="b-prod">In production</span> <span class="b-ready">Ready</span></span></label>
+  <div class="tags" id="grid"></div>
+  <div class="total"><span>Total</span><span id="tot">0 pcs</span></div>
+  <div class="row">
+    <div><label for="date">Date</label><input id="date" type="date"></div>
+    <div><label for="ref">Lot / order ref</label><input id="ref"></div>
+  </div>
+  <label for="notes">Notes</label><input id="notes">
+  <label class="checkline" id="closeBox" hidden><input type="checkbox" id="close">
+    <span>Production completed for this colour. Balance in-production qty becomes short / rejection.</span></label>
+  <button class="btn" id="save">Save</button>
+</div>
+<div class="card"><h2>Last 10 entries</h2><div id="recent" class="hint">Loading…</div></div>
+</main>
+<script src="app.js?v=1"></script>
+<script>
+const MODE = new URLSearchParams(location.search).get('m') === 'ready' ? 'ready' : 'prod';
+const T = MODE === 'ready'
+  ? { title:'Ready inward', btn:'Move to ready', types:['READY_IN','READY_DIRECT','PROD_SHORT'] }
+  : { title:'Production entry', btn:'Add to production', types:['PROD_IN'] };
+const LBL = { PROD_IN:'In production', READY_IN:'Ready', READY_DIRECT:'Direct ready', PROD_SHORT:'Short' };
+const CLS = { PROD_IN:'b-prod', READY_IN:'b-ready', READY_DIRECT:'b-ready', PROD_SHORT:'b-short' };
+let SKUS = [], CUR = null, SRC = 'PROD';
+document.title = T.title; $('#title').textContent = T.title; $('#save').textContent = T.btn;
+document.body.classList.add('m-' + MODE);
+$('#date').value = today();
+
+async function loadSkus(keep) {
+  SKUS = (await api('skuList')).skus;
+  skuPicker($('#picker'), SKUS, pick);
+  if (keep) { const p = SKUS.find(x => x.parent === keep); if (p) pick(p, false); }
+}
+function pick(p, scroll) {
+  CUR = p; $('#form').hidden = false;
+  $('#sel').innerHTML = `${thumb(p.image)}<div><b>${esc(p.name)}</b><div class="hint">${esc(p.product)} ${esc(p.style)} | ${esc(p.parent)}</div></div>`;
+  $('#srcBox').hidden = MODE !== 'ready';
+  drawGrid();
+  if (scroll) $('#form').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function drawGrid() {
+  const fromProd = MODE === 'ready' && SRC === 'PROD';
+  $('#grid').innerHTML = CUR.sizes.map(s => `<div class="tag"><b>${esc(s.size)}</b>
+    <div class="bal"><span class="b-prod">${s.inProd}</span><span class="b-ready">${s.ready}</span></div>
+    <input type="number" inputmode="numeric" min="0" ${fromProd ? 'max="' + s.inProd + '"' : ''} data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"></div>`).join('');
+  $('#closeBox').hidden = !fromProd;
+  $('#srcHint').textContent = MODE !== 'ready' ? ''
+    : fromProd ? 'Qty moves from In production to Ready.' : 'Old or extra stock not entered in production. Adds straight to Ready.';
+  sumUp();
+}
+function lines() { return [...document.querySelectorAll('#grid input')].map(i => ({ sku: i.dataset.sku, qty: Math.round(Number(i.value) || 0) })).filter(l => l.qty > 0); }
+function sumUp() { $('#tot').textContent = lines().reduce((a, l) => a + l.qty, 0) + ' pcs'; }
+
+async function loadRecent() {
+  try {
+    const r = await api('recent', { types: T.types });
+    $('#recent').innerHTML = r.rows.length ? r.rows.map(x => `<div class="rec"><b>${esc(x.parent)}</b>
+      <span class="${CLS[x.type]}">${LBL[x.type]} ${x.qty} pcs</span>
+      <div class="hint">${esc(x.date)} | ${esc(x.parts.join(', '))} | ${esc(x.by)}${x.ref ? ' | ' + esc(x.ref) : ''}</div></div>`).join('')
+      : 'No entries yet.';
+  } catch (e) { $('#recent').textContent = e.message; }
+}
+
+$('#src').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  SRC = b.dataset.v; [...$('#src').children].forEach(x => x.classList.toggle('on', x === b)); drawGrid();
+};
+$('#grid').oninput = sumUp;
+$('#save').onclick = async () => {
+  const L = lines(), close = MODE === 'ready' && SRC === 'PROD' && $('#close').checked;
+  if (!L.length && !close) return toast('Enter qty for at least one size', 1);
+  if (close) {
+    const left = CUR.sizes.reduce((a, s) => { const l = L.find(x => x.sku === s.sku); return a + Math.max(0, s.inProd - (l ? l.qty : 0)); }, 0);
+    if (left > 0 && !confirm(left + ' pcs still in production will be marked short / rejection. Continue?')) return;
+  }
+  const b = $('#save'); b.disabled = true; b.textContent = 'Saving…';
+  try {
+    await api('stockEntry', { type: MODE === 'ready' ? 'READY_IN' : 'PROD_IN', source: SRC, parent: CUR.parent,
+      date: $('#date').value, ref: $('#ref').value, notes: $('#notes').value, lines: L, closeProduction: close });
+    toast('Saved ' + L.reduce((a, l) => a + l.qty, 0) + ' pcs for ' + CUR.parent);
+    $('#notes').value = ''; $('#close').checked = false;
+    await loadSkus(CUR.parent); loadRecent();
+  } catch (e) { toast(e.message, 1); }
+  b.disabled = false; b.textContent = T.btn;
+};
+
+gate(['ADMIN','PRODUCTION'], async () => {
+  try { await loadSkus(); } catch (e) { toast(e.message, 1); }
+  loadRecent();
+});
+</script></body></html>

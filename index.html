@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1"><title>Pivotaal Stock</title></head><body>
+<header class="top"><h1>Pivotaal Stock</h1><button class="chip" id="user"></button></header>
+<main hidden><div class="tiles" id="tiles"></div></main>
+<script src="app.js?v=1"></script>
+<script>
+const TILES = [
+  { href:'sku.html', t:'Create SKU', d:'New colour or print with sizes and photo', roles:['ADMIN','SKU'] },
+  { href:'entry.html?m=prod', t:'Production entry', d:'Size-wise qty going into production', roles:['ADMIN','PRODUCTION'] },
+  { href:'entry.html?m=ready', t:'Ready inward', d:'Move packed qty to ready to dispatch', roles:['ADMIN','PRODUCTION'] },
+  { t:'Reservation', d:'Reserve stock for a customer', soon:'Coming in phase 2' },
+  { t:'Dispatch', d:'Close reservations and B2B outward', soon:'Coming in phase 2' },
+  { t:'Live stock', d:'Size-wise balance, ageing, photos', soon:'Coming in phase 3' }
+];
+gate(null, u => {
+  $('#tiles').innerHTML = TILES.filter(x => x.soon || x.roles.some(r => u.roles.includes(r))).map(x => x.soon
+    ? `<div class="tile soon"><b>${x.t}</b><span>${x.d}</span><em>${x.soon}</em></div>`
+    : `<a class="tile" href="${x.href}"><b>${x.t}</b><span>${x.d}</span></a>`).join('');
+});
+</script></body></html>

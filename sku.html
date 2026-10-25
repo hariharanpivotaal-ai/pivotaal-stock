@@ -1,0 +1,89 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1"><title>Create SKU</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Create SKU</h1><button class="chip" id="user"></button></header>
+<main hidden>
+<div class="card">
+  <div class="row">
+    <div><label for="product">Product</label><select id="product"></select></div>
+    <div><label for="style">Style</label><select id="style"></select></div>
+  </div>
+  <label for="name">Colour / print name</label><input id="name" placeholder="e.g. Navy, Dino print">
+  <div class="row">
+    <div><label for="code">Name code <span class="hint">(auto)</span></label><input id="code" maxlength="10"></div>
+    <div><label for="price">Selling price per pc (₹)</label><input id="price" type="number" inputmode="decimal" min="0"></div>
+  </div>
+  <label>Sizes <span class="hint">(tap a size to remove it)</span></label><div class="tags" id="sizes"></div>
+  <label for="photo">Product photo</label><input id="photo" type="file" accept="image/*"><img id="prev" class="prev" hidden alt="Photo preview">
+  <label for="notes">Notes</label><input id="notes">
+  <div class="skuprev" id="skuprev"></div>
+  <button class="btn" id="save">Create SKU</button>
+</div>
+<div class="card"><h2>Existing SKUs</h2><div id="list" class="hint">Loading…</div></div>
+</main>
+<script src="app.js?v=1"></script>
+<script>
+let M, IMG = null, codeTouched = false;
+const code = t => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+const checked = () => [...document.querySelectorAll('#sizes input:checked')].map(i => i.value);
+
+function drawSizes() {
+  const p = M.products.find(x => x.name === $('#product').value);
+  const z = p ? M.sizes.filter(s => s.group === p.group) : [];
+  $('#sizes').innerHTML = z.map(s => `<label class="tag check"><input type="checkbox" value="${esc(s.code)}" checked><b>${esc(s.name)}</b></label>`).join('')
+    || '<p class="hint">No sizes for this product. Add them in the M_Sizes sheet.</p>';
+  preview();
+}
+function parentSku() {
+  const p = M.products.find(x => x.name === $('#product').value), s = M.styles.find(x => x.name === $('#style').value);
+  return p && s && $('#code').value ? `${p.code}-${s.code}-${$('#code').value}` : '';
+}
+function preview() {
+  if (!M) return;
+  const par = parentSku(), n = checked().length;
+  $('#skuprev').innerHTML = par ? `<span class="hint">New SKU</span> <b>${esc(par)}</b> <span class="hint">with ${n} size${n == 1 ? '' : 's'}</span>` : '';
+}
+async function loadList() {
+  try {
+    const r = await api('skuList');
+    $('#list').innerHTML = r.skus.length ? r.skus.slice().reverse().map(p => `<div class="pick-item">${thumb(p.image)}
+      <div><b>${esc(p.name)}</b><div class="hint">${esc(p.parent)} | ${p.sizes.map(s => esc(s.size)).join(', ')}</div></div></div>`).join('')
+      : 'No SKUs yet. Create the first one above.';
+  } catch (e) { $('#list').textContent = e.message; }
+}
+
+$('#sizes').onchange = e => { e.target.closest('.tag').classList.toggle('off', !e.target.checked); preview(); };
+$('#product').onchange = drawSizes;
+$('#style').onchange = preview;
+$('#name').oninput = () => { if (!codeTouched) $('#code').value = code($('#name').value); preview(); };
+$('#code').oninput = () => { codeTouched = true; $('#code').value = code($('#code').value); preview(); };
+$('#photo').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { IMG = await resizeImage(f); $('#prev').src = IMG.url; $('#prev').hidden = false; } catch (err) { toast(err.message, 1); }
+};
+$('#save').onclick = async () => {
+  const sizes = checked();
+  if (!$('#name').value.trim()) return toast('Enter colour / print name', 1);
+  if (!sizes.length) return toast('Select at least one size', 1);
+  const b = $('#save'); b.disabled = true; b.textContent = 'Creating…';
+  try {
+    const r = await api('createSku', {
+      product: $('#product').value, style: $('#style').value, name: $('#name').value.trim(), nameCode: $('#code').value,
+      price: $('#price').value, notes: $('#notes').value, sizes, image: IMG && IMG.b64, mime: IMG && IMG.mime
+    });
+    toast('Created ' + r.parent + ' with ' + r.sizes.length + ' sizes');
+    ['name','code','price','notes'].forEach(id => $('#' + id).value = '');
+    $('#photo').value = ''; $('#prev').hidden = true; IMG = null; codeTouched = false;
+    drawSizes(); loadList();
+  } catch (e) { toast(e.message, 1); }
+  b.disabled = false; b.textContent = 'Create SKU';
+};
+
+gate(['ADMIN','SKU'], async () => {
+  try { M = await api('masters'); } catch (e) { return toast(e.message, 1); }
+  $('#product').innerHTML = M.products.map(p => `<option>${esc(p.name)}</option>`).join('');
+  $('#style').innerHTML = M.styles.map(s => `<option>${esc(s.name)}</option>`).join('');
+  drawSizes(); loadList();
+});
+</script></body></html>
