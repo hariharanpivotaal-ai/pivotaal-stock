@@ -56,3 +56,5 @@ body.m-ready .btn{background:#24603F}
 #toast.show{transform:translate(-50%,0)}#toast.bad{background:var(--red)}
 @media (max-width:440px){.row{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}
+.fc{margin:8px 0 2px}
