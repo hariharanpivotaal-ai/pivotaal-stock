@@ -1,0 +1,79 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=3"><title>Users & permissions</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Users & permissions</h1><button class="chip" id="user"></button></header>
+<main hidden>
+<div class="card"><button class="btn" id="add" style="margin-top:0">+ Add user</button></div>
+<div class="card"><h2>Users</h2><div id="list" class="hint">Loading…</div></div>
+</main>
+<dialog id="ud"><div class="edbox">
+  <div class="edhead"><b id="uTitle">User</b><button class="x" id="uClose" aria-label="Close">×</button></div>
+  <div class="row">
+    <div><label for="uName">Name</label><input id="uName"></div>
+    <div><label for="uPin">PIN <span class="hint">(4 to 6 digits)</span></label><input id="uPin" inputmode="numeric" maxlength="6"></div>
+  </div>
+  <div class="row">
+    <div><label for="uPhone">WhatsApp number</label><input id="uPhone" inputmode="tel"></div>
+    <div><label>Status</label><div class="seg" id="uAct"><button data-v="Yes">Active</button><button data-v="No">Inactive</button></div></div>
+  </div>
+  <label>Permissions</label>
+  <label class="pl"><input type="checkbox" id="uAdmin"> <b>Admin</b> <span class="hint">(all permissions)</span></label>
+  <div id="uPerms"></div>
+  <p class="err" id="uErr" role="alert"></p>
+  <button class="btn" id="uSave">Save user</button>
+</div></dialog>
+<script src="config.js?v=3"></script><script src="app.js?v=3"></script>
+<script>
+const LBL = { SKU_CREATE:'Create SKU', SKU_EDIT:'Edit SKU', PROD_ENTRY:'Production entry', READY_ENTRY:'Ready inward',
+  RESERVE:'Reservation (phase 2)', DISPATCH:'Dispatch (phase 2)', REPORT:'Live stock report (phase 3)', USERS:'Manage users & permissions' };
+let U = [], P = [], CUR = null, ACT = 'Yes';
+
+async function load() {
+  try { const r = await api('users'); U = r.users; P = r.perms; draw(); }
+  catch (e) { $('#list').textContent = e.message; }
+}
+function draw() {
+  $('#list').innerHTML = U.map((x, i) => `<div class="pick-item ${x.active ? '' : 'inactive'}">
+    <div class="avatar" aria-hidden="true">${esc(String(x.name).charAt(0).toUpperCase())}</div>
+    <div><b>${esc(x.name)}</b> ${x.admin ? '<span class="b-ready">Admin</span>' : ''} ${x.active ? '' : '<span class="b-off">Inactive</span>'}
+    <div class="hint">${x.admin ? 'All permissions' : (x.perms.map(p => LBL[p]).join(', ') || 'No permissions')}</div></div>
+    <button class="ebtn" data-i="${i}">Edit</button></div>`).join('') || 'No users.';
+}
+function setAct(v) { ACT = v; [...$('#uAct').children].forEach(x => x.classList.toggle('on', x.dataset.v === v)); }
+function drawPerms() {
+  const adm = $('#uAdmin').checked;
+  $('#uPerms').innerHTML = P.map(p => `<label class="pl ${adm ? 'dis' : ''}"><input type="checkbox" value="${p}"
+    ${adm || CUR.perms.includes(p) ? 'checked' : ''} ${adm ? 'disabled' : ''}> ${LBL[p] || p}</label>`).join('');
+}
+function openUser(i) {
+  CUR = i == null ? { row: 0, name: '', pin: '', phone: '', active: true, admin: false, perms: [] } : JSON.parse(JSON.stringify(U[i]));
+  $('#uTitle').textContent = CUR.row ? 'Edit ' + CUR.name : 'Add user';
+  $('#uName').value = CUR.name; $('#uPin').value = CUR.pin; $('#uPhone').value = CUR.phone;
+  $('#uAdmin').checked = CUR.admin; setAct(CUR.active ? 'Yes' : 'No'); $('#uErr').textContent = '';
+  drawPerms(); $('#ud').showModal();
+}
+$('#add').onclick = () => openUser(null);
+$('#list').onclick = e => { const b = e.target.closest('.ebtn'); if (b) openUser(Number(b.dataset.i)); };
+$('#uClose').onclick = () => $('#ud').close();
+$('#uAct').onclick = e => { const b = e.target.closest('button'); if (b) setAct(b.dataset.v); };
+$('#uAdmin').onchange = () => { CUR.perms = [...document.querySelectorAll('#uPerms input:checked')].map(i => i.value); drawPerms(); };
+$('#uSave').onclick = async () => {
+  $('#uErr').textContent = '';
+  const admin = $('#uAdmin').checked;
+  const d = { row: CUR.row, name: $('#uName').value.trim(), pin: $('#uPin').value.trim(), phone: $('#uPhone').value.trim(),
+    active: ACT === 'Yes', admin, perms: admin ? [] : [...document.querySelectorAll('#uPerms input:checked')].map(i => i.value) };
+  const b = $('#uSave'); b.disabled = true; b.textContent = 'Saving…';
+  try {
+    await api('saveUser', d);
+    const u = me();
+    if (CUR.row && u && CUR.pin === u.pin) { // edited own account: keep logged in
+      localStorage.setItem('pse_user', JSON.stringify({ name: d.name, admin, perms: admin ? P.slice() : d.perms, pin: d.pin }));
+      userBar(me());
+    }
+    $('#ud').close(); toast('Saved ' + d.name); load();
+  } catch (e) { $('#uErr').textContent = e.message; }
+  b.disabled = false; b.textContent = 'Save user';
+};
+gate(['USERS'], load);
+</script></body></html>
