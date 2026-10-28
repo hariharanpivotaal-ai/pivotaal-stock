@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1"><title>Stock entry</title></head><body>
+<link rel="stylesheet" href="style.css?v=2"><title>Stock entry</title></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1 id="title">Production entry</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card"><h2>Select SKU</h2><div id="picker"></div></div>
@@ -26,7 +26,7 @@
 </div>
 <div class="card"><h2>Last 10 entries</h2><div id="recent" class="hint">Loading…</div></div>
 </main>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 <script>
 const MODE = new URLSearchParams(location.search).get('m') === 'ready' ? 'ready' : 'prod';
 const T = MODE === 'ready'
