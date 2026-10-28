@@ -80,20 +80,52 @@ function resizeImage(file, max = 1000) {
 
 function thumb(url) { return url ? `<img class="thumb" src="${esc(url)}" alt="" loading="lazy">` : `<div class="thumb none"></div>`; }
 
-// Searchable SKU list (reused in Phase 2 forms)
-function skuPicker(box, skus, onPick) {
-  box.innerHTML = `<input type="search" placeholder="Search colour, print, style or SKU" aria-label="Search SKU"><div class="pick-list"></div>`;
-  const inp = $('input', box), list = $('.pick-list', box);
-  const draw = () => {
-    const q = inp.value.trim().toLowerCase();
-    const f = skus.filter(p => !q || [p.parent, p.name, p.style, p.product].join(' ').toLowerCase().includes(q)).slice(0, 30);
-    list.innerHTML = f.length
-      ? f.map(p => `<div class="pick-item" data-p="${esc(p.parent)}" tabindex="0">${thumb(p.image)}
-          <div><b>${esc(p.name)}</b><div class="hint">${esc(p.product)} ${esc(p.style)} | ${esc(p.parent)}</div></div></div>`).join('')
-      : '<p class="hint">No SKU found. Create it in Create SKU first.</p>';
+// Filter bar: Product + Style (+ Status) + search. Keeps your filter after save.
+function skuFilter(box, skus, render, withStatus, holder) {
+  holder = holder || box;
+  const st = holder._st || (holder._st = { p: '', s: '', q: '', a: withStatus ? 'Active' : '' });
+  const uniq = (list, k) => [...new Set(list.map(x => x[k]).filter(Boolean))].sort();
+  const opt = v => `<option>${esc(v)}</option>`;
+  box.innerHTML = `<div class="filters">
+      <select class="fp" aria-label="Filter by product"><option value="">All products</option>${uniq(skus, 'product').map(opt).join('')}</select>
+      <select class="fs" aria-label="Filter by style"></select>
+      ${withStatus ? '<select class="fa" aria-label="Filter by status"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="">All status</option></select>' : ''}
+    </div>
+    <input class="fq" type="search" placeholder="Search colour, print or SKU code" aria-label="Search SKU">
+    <div class="hint fc"></div>`;
+  const fp = $('.fp', box), fs = $('.fs', box), fa = $('.fa', box), fq = $('.fq', box);
+  const fillStyles = () => {
+    const list = fp.value ? skus.filter(x => x.product === fp.value) : skus;
+    fs.innerHTML = '<option value="">All styles</option>' + uniq(list, 'style').map(opt).join('');
+    fs.value = st.s;
   };
+  fp.value = st.p; fillStyles(); if (fa) fa.value = st.a; fq.value = st.q;
+  const run = () => {
+    st.p = fp.value; st.s = fs.value; st.q = fq.value.trim(); if (fa) st.a = fa.value;
+    const q = st.q.toLowerCase();
+    const f = skus.filter(x => (!st.p || x.product === st.p) && (!st.s || x.style === st.s)
+      && (!fa || !st.a || (x.status || 'Active') === st.a)
+      && (!q || [x.parent, x.name, x.style, x.product].join(' ').toLowerCase().includes(q)));
+    $('.fc', box).textContent = 'Showing ' + f.length + ' of ' + skus.length + ' SKUs';
+    render(f);
+  };
+  fp.onchange = () => { fillStyles(); run(); };
+  fs.onchange = run; if (fa) fa.onchange = run; fq.oninput = run;
+  run();
+}
+
+// SKU picker for entry forms (reused in Phase 2)
+function skuPicker(box, skus, onPick) {
+  box.innerHTML = '<div class="pf"></div><div class="pick-list"></div>';
+  const list = $('.pick-list', box);
+  skuFilter($('.pf', box), skus, f => {
+    list.innerHTML = f.length
+      ? f.slice(0, 50).map(p => `<div class="pick-item" data-p="${esc(p.parent)}" tabindex="0" style="cursor:pointer">${thumb(p.image)}
+          <div><b>${esc(p.name)}</b><div class="hint">${esc(p.product)} ${esc(p.style)} | ${esc(p.parent)}</div></div></div>`).join('')
+        + (f.length > 50 ? '<p class="hint">Showing first 50. Use the filters to narrow down.</p>' : '')
+      : '<p class="hint">No SKU found. Change the filters or create it in Create SKU.</p>';
+  }, false, box);
   const choose = e => { const it = e.target.closest('.pick-item'); if (it) onPick(skus.find(p => p.parent === it.dataset.p), true); };
   list.onclick = choose;
   list.onkeydown = e => { if (e.key === 'Enter') choose(e); };
-  inp.oninput = draw; draw();
 }
