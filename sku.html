@@ -1,7 +1,20 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1"><title>Create SKU</title></head><body>
+<link rel="stylesheet" href="style.css?v=2"><title>Create SKU</title>
+<style>
+dialog{border:0;border-radius:12px;padding:0;width:min(560px,96vw);max-height:92vh;color:var(--ink)}
+dialog::backdrop{background:rgba(24,33,43,.55)}
+.edbox{padding:0 16px 16px;overflow:auto;max-height:92vh}
+.edhead{display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;padding:14px 0 8px;z-index:2;border-bottom:1px solid var(--line)}
+.x{border:0;background:none;font-size:28px;line-height:1;cursor:pointer;color:var(--muted)}
+.ebtn{margin-left:auto;flex:none;font:inherit;font-size:13px;font-weight:700;padding:6px 14px;border:1px solid var(--indigo);border-radius:8px;background:#fff;color:var(--indigo);cursor:pointer}
+.b-off{display:inline-block;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700;background:#E4E7EB;color:var(--muted)}
+.pick-item{cursor:default}.pick-item.inactive .thumb,.pick-item.inactive b{opacity:.45}
+.tag.have{border-style:dashed;opacity:.65;padding-bottom:12px}
+#eStatus button[data-v="Inactive"].on{background:var(--red)}
+.err{color:var(--red);font-weight:600;font-size:14px;min-height:1em;margin:10px 0 0}
+</style></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Create SKU</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card">
@@ -20,14 +33,37 @@
   <div class="skuprev" id="skuprev"></div>
   <button class="btn" id="save">Create SKU</button>
 </div>
-<div class="card"><h2>Existing SKUs</h2><div id="list" class="hint">Loading…</div></div>
+<div class="card">
+  <h2>Existing SKUs</h2>
+  <div id="flt"></div>
+  <div id="list" class="hint">Loading…</div>
+</div>
 </main>
-<script src="app.js?v=1"></script>
-<script>
-let M, IMG = null, codeTouched = false;
-const code = t => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-const checked = () => [...document.querySelectorAll('#sizes input:checked')].map(i => i.value);
 
+<dialog id="ed"><div class="edbox">
+  <div class="edhead"><b id="edTitle"></b><button class="x" id="edClose" aria-label="Close">×</button></div>
+  <label for="eName">Colour / print name</label><input id="eName">
+  <p class="hint">The SKU code does not change, so stock history stays safe.</p>
+  <div class="row">
+    <div><label for="ePrice">Selling price per pc (₹)</label><input id="ePrice" type="number" inputmode="decimal" min="0"></div>
+    <div><label>Status</label><div class="seg" id="eStatus"><button data-v="Active">Active</button><button data-v="Inactive">Inactive</button></div></div>
+  </div>
+  <p class="hint" id="eStHint"></p>
+  <label for="ePhoto">Photo <span class="hint">(choose a new one to replace)</span></label>
+  <img id="eImg" class="prev" alt="Current photo"><input id="ePhoto" type="file" accept="image/*" style="margin-top:8px">
+  <label>Sizes <span class="hint">(dashed = already added, tap + to add)</span></label><div class="tags" id="eSizes"></div>
+  <label for="eNotes">Notes</label><input id="eNotes">
+  <p class="err" id="eErr" role="alert"></p>
+  <button class="btn" id="eSave">Save changes</button>
+</div></dialog>
+
+<script src="app.js?v=2"></script>
+<script>
+let M, IMG = null, codeTouched = false, ALL = [], ED = null, EIMG = null, EST = 'Active';
+const code = t => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+const checked = sel => [...document.querySelectorAll(sel + ' input:checked')].map(i => i.value);
+
+/* ---------- Create ---------- */
 function drawSizes() {
   const p = M.products.find(x => x.name === $('#product').value);
   const z = p ? M.sizes.filter(s => s.group === p.group) : [];
@@ -41,18 +77,9 @@ function parentSku() {
 }
 function preview() {
   if (!M) return;
-  const par = parentSku(), n = checked().length;
+  const par = parentSku(), n = checked('#sizes').length;
   $('#skuprev').innerHTML = par ? `<span class="hint">New SKU</span> <b>${esc(par)}</b> <span class="hint">with ${n} size${n == 1 ? '' : 's'}</span>` : '';
 }
-async function loadList() {
-  try {
-    const r = await api('skuList');
-    $('#list').innerHTML = r.skus.length ? r.skus.slice().reverse().map(p => `<div class="pick-item">${thumb(p.image)}
-      <div><b>${esc(p.name)}</b><div class="hint">${esc(p.parent)} | ${p.sizes.map(s => esc(s.size)).join(', ')}</div></div></div>`).join('')
-      : 'No SKUs yet. Create the first one above.';
-  } catch (e) { $('#list').textContent = e.message; }
-}
-
 $('#sizes').onchange = e => { e.target.closest('.tag').classList.toggle('off', !e.target.checked); preview(); };
 $('#product').onchange = drawSizes;
 $('#style').onchange = preview;
@@ -63,7 +90,7 @@ $('#photo').onchange = async e => {
   try { IMG = await resizeImage(f); $('#prev').src = IMG.url; $('#prev').hidden = false; } catch (err) { toast(err.message, 1); }
 };
 $('#save').onclick = async () => {
-  const sizes = checked();
+  const sizes = checked('#sizes');
   if (!$('#name').value.trim()) return toast('Enter colour / print name', 1);
   if (!sizes.length) return toast('Select at least one size', 1);
   const b = $('#save'); b.disabled = true; b.textContent = 'Creating…';
@@ -78,6 +105,71 @@ $('#save').onclick = async () => {
     drawSizes(); loadList();
   } catch (e) { toast(e.message, 1); }
   b.disabled = false; b.textContent = 'Create SKU';
+};
+
+/* ---------- List ---------- */
+async function loadList() {
+  try { ALL = (await api('skuList', { all: true })).skus; drawList(); }
+  catch (e) { $('#list').textContent = e.message; }
+}
+function drawList() {
+  skuFilter($('#flt'), ALL.slice().reverse(), f => {
+    $('#list').innerHTML = f.length ? f.slice(0, 60).map(p => {
+      const off = p.status === 'Inactive';
+      return `<div class="pick-item ${off ? 'inactive' : ''}">${thumb(p.image)}
+        <div><b>${esc(p.name)}</b> ${off ? '<span class="b-off">Inactive</span>' : ''}
+        <div class="hint">${esc(p.parent)} | ${p.sizes.map(s => esc(s.size)).join(', ')}${p.price ? ' | ₹' + esc(p.price) : ''}</div></div>
+        <button class="ebtn" data-p="${esc(p.parent)}">Edit</button></div>`;
+    }).join('') + (f.length > 60 ? '<p class="hint">Showing first 60. Use the filters to narrow down.</p>' : '')
+      : (ALL.length ? 'No SKU matches these filters.' : 'No SKUs yet. Create the first one above.');
+  }, true);
+}
+$('#list').onclick = e => { const b = e.target.closest('.ebtn'); if (b) openEdit(b.dataset.p); };
+
+/* ---------- Edit ---------- */
+function setSt(v) {
+  EST = v;
+  [...$('#eStatus').children].forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  $('#eStHint').textContent = v === 'Inactive' ? 'Inactive SKUs are hidden from production, ready and reservation forms.' : '';
+}
+function openEdit(par) {
+  ED = ALL.find(p => p.parent === par); if (!ED) return;
+  EIMG = null; $('#eErr').textContent = ''; $('#ePhoto').value = '';
+  $('#edTitle').textContent = ED.parent;
+  $('#eName').value = ED.name; $('#ePrice').value = ED.price || ''; $('#eNotes').value = ED.notes || '';
+  setSt(ED.status === 'Inactive' ? 'Inactive' : 'Active');
+  $('#eImg').src = ED.image || ''; $('#eImg').hidden = !ED.image;
+  const prod = M.products.find(x => x.name === ED.product);
+  const have = ED.sizes.map(s => s.sku.slice(ED.parent.length + 1));
+  const more = prod ? M.sizes.filter(z => z.group === prod.group && !have.includes(z.code)) : [];
+  $('#eSizes').innerHTML = ED.sizes.map(s => `<div class="tag have"><b>${esc(s.size)}</b></div>`).join('')
+    + more.map(z => `<label class="tag check off"><input type="checkbox" value="${esc(z.code)}"><b>+ ${esc(z.name)}</b></label>`).join('');
+  $('#ed').showModal();
+}
+$('#edClose').onclick = () => $('#ed').close();
+$('#eStatus').onclick = e => { const b = e.target.closest('button'); if (b) setSt(b.dataset.v); };
+$('#eSizes').onchange = e => e.target.closest('.tag').classList.toggle('off', !e.target.checked);
+$('#ePhoto').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { EIMG = await resizeImage(f); $('#eImg').src = EIMG.url; $('#eImg').hidden = false; } catch (err) { $('#eErr').textContent = err.message; }
+};
+$('#eSave').onclick = async () => {
+  $('#eErr').textContent = '';
+  if (!$('#eName').value.trim()) { $('#eErr').textContent = 'Enter colour / print name'; return; }
+  const stock = ED.sizes.reduce((a, s) => a + s.inProd + s.ready, 0);
+  if (EST === 'Inactive' && ED.status !== 'Inactive' && stock > 0 &&
+      !confirm(ED.parent + ' still has ' + stock + ' pcs in stock. Make it inactive anyway?')) return;
+  const b = $('#eSave'); b.disabled = true; b.textContent = 'Saving…';
+  try {
+    const r = await api('updateSku', {
+      parent: ED.parent, name: $('#eName').value.trim(), price: $('#ePrice').value, notes: $('#eNotes').value,
+      status: EST, addSizes: checked('#eSizes'), image: EIMG && EIMG.b64, mime: EIMG && EIMG.mime
+    });
+    $('#ed').close();
+    toast('Saved ' + ED.parent + (r.added ? ' (+' + r.added + ' sizes)' : ''));
+    loadList();
+  } catch (e) { $('#eErr').textContent = e.message; }
+  b.disabled = false; b.textContent = 'Save changes';
 };
 
 gate(['ADMIN','SKU'], async () => {
