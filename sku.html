@@ -1,23 +1,11 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2"><title>Create SKU</title>
-<style>
-dialog{border:0;border-radius:12px;padding:0;width:min(560px,96vw);max-height:92vh;color:var(--ink)}
-dialog::backdrop{background:rgba(24,33,43,.55)}
-.edbox{padding:0 16px 16px;overflow:auto;max-height:92vh}
-.edhead{display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;padding:14px 0 8px;z-index:2;border-bottom:1px solid var(--line)}
-.x{border:0;background:none;font-size:28px;line-height:1;cursor:pointer;color:var(--muted)}
-.ebtn{margin-left:auto;flex:none;font:inherit;font-size:13px;font-weight:700;padding:6px 14px;border:1px solid var(--indigo);border-radius:8px;background:#fff;color:var(--indigo);cursor:pointer}
-.b-off{display:inline-block;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700;background:#E4E7EB;color:var(--muted)}
-.pick-item{cursor:default}.pick-item.inactive .thumb,.pick-item.inactive b{opacity:.45}
-.tag.have{border-style:dashed;opacity:.65;padding-bottom:12px}
-#eStatus button[data-v="Inactive"].on{background:var(--red)}
-.err{color:var(--red);font-weight:600;font-size:14px;min-height:1em;margin:10px 0 0}
-</style></head><body>
-<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Create SKU</h1><button class="chip" id="user"></button></header>
+<link rel="stylesheet" href="style.css?v=3"><title>Create / Edit SKU</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Create / Edit SKU</h1><button class="chip" id="user"></button></header>
 <main hidden>
-<div class="card">
+<div class="card" id="formCard">
+  <div class="edbar" id="edBar" hidden><div><span class="hint">Editing</span> <b id="edCode"></b></div><button class="ebtn" id="cancelEd">Cancel</button></div>
   <div class="row">
     <div><label for="product">Product</label><select id="product"></select></div>
     <div><label for="style">Style</label><select id="style"></select></div>
@@ -27,7 +15,10 @@ dialog::backdrop{background:rgba(24,33,43,.55)}
     <div><label for="code">Name code <span class="hint">(auto)</span></label><input id="code" maxlength="10"></div>
     <div><label for="price">Selling price per pc (₹)</label><input id="price" type="number" inputmode="decimal" min="0"></div>
   </div>
-  <label>Sizes <span class="hint">(tap a size to remove it)</span></label><div class="tags" id="sizes"></div>
+  <div id="stBox" hidden><label>Status</label>
+    <div class="seg" id="stSeg"><button data-v="Active">Active</button><button data-v="Inactive">Inactive</button></div></div>
+  <label>Sizes <span class="hint">(tap to select / remove)</span></label><div class="tags" id="sizes"></div>
+  <div id="swapBox" hidden><label>Interchange size <span class="hint">(only to correct a wrong size)</span></label><div id="swaps"></div></div>
   <label for="photo">Product photo</label><input id="photo" type="file" accept="image/*"><img id="prev" class="prev" hidden alt="Photo preview">
   <label for="notes">Notes</label><input id="notes">
   <div class="skuprev" id="skuprev"></div>
@@ -39,38 +30,35 @@ dialog::backdrop{background:rgba(24,33,43,.55)}
   <div id="list" class="hint">Loading…</div>
 </div>
 </main>
-
-<dialog id="ed"><div class="edbox">
-  <div class="edhead"><b id="edTitle"></b><button class="x" id="edClose" aria-label="Close">×</button></div>
-  <label for="eName">Colour / print name</label><input id="eName">
-  <p class="hint">The SKU code does not change, so stock history stays safe.</p>
-  <div class="row">
-    <div><label for="ePrice">Selling price per pc (₹)</label><input id="ePrice" type="number" inputmode="decimal" min="0"></div>
-    <div><label>Status</label><div class="seg" id="eStatus"><button data-v="Active">Active</button><button data-v="Inactive">Inactive</button></div></div>
-  </div>
-  <p class="hint" id="eStHint"></p>
-  <label for="ePhoto">Photo <span class="hint">(choose a new one to replace)</span></label>
-  <img id="eImg" class="prev" alt="Current photo"><input id="ePhoto" type="file" accept="image/*" style="margin-top:8px">
-  <label>Sizes <span class="hint">(dashed = already added, tap + to add)</span></label><div class="tags" id="eSizes"></div>
-  <label for="eNotes">Notes</label><input id="eNotes">
-  <p class="err" id="eErr" role="alert"></p>
-  <button class="btn" id="eSave">Save changes</button>
-</div></dialog>
-
-<script src="app.js?v=2"></script>
+<script src="config.js?v=3"></script><script src="app.js?v=3"></script>
 <script>
-let M, IMG = null, codeTouched = false, ALL = [], ED = null, EIMG = null, EST = 'Active';
+let M, IMG = null, codeTouched = false, ALL = [], ED = null, ST = 'Active';
 const code = t => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
 const checked = sel => [...document.querySelectorAll(sel + ' input:checked')].map(i => i.value);
+const grpOf = n => (M.products.find(x => x.name === n) || {}).group;
+const curGroup = () => grpOf($('#product').value);
+const sameGroup = () => ED && curGroup() === ED.group;
 
-/* ---------- Create ---------- */
 function drawSizes() {
-  const p = M.products.find(x => x.name === $('#product').value);
-  const z = p ? M.sizes.filter(s => s.group === p.group) : [];
-  $('#sizes').innerHTML = z.map(s => `<label class="tag check"><input type="checkbox" value="${esc(s.code)}" checked><b>${esc(s.name)}</b></label>`).join('')
-    || '<p class="hint">No sizes for this product. Add them in the M_Sizes sheet.</p>';
-  preview();
+  const z = M.sizes.filter(s => s.group === curGroup());
+  $('#sizes').innerHTML = z.map(s => {
+    const h = sameGroup() ? ED.sizes.find(x => x.code === s.code) : null;
+    const on = ED && sameGroup() ? !!(h && !h.off) : true;
+    return `<label class="tag check ${on ? '' : 'off'}"><input type="checkbox" value="${esc(s.code)}" ${on ? 'checked' : ''}>
+      <b>${esc(s.name)}</b>${h && h.used ? '<span class="used">has entries</span>' : ''}</label>`;
+  }).join('') || '<p class="hint">No sizes for this product. Add them in the M_Sizes sheet.</p>';
+  drawSwaps(); preview();
 }
+function drawSwaps() {
+  const show = sameGroup();
+  $('#swapBox').hidden = !show;
+  if (!show) { $('#swaps').innerHTML = ''; return; }
+  const z = M.sizes.filter(s => s.group === ED.group);
+  $('#swaps').innerHTML = ED.sizes.filter(s => !s.off).map(s => `<div class="swap"><b>${esc(s.size)}</b><span aria-hidden="true">→</span>
+    <select data-from="${esc(s.code)}" aria-label="Change ${esc(s.size)} to"><option value="">No change</option>
+    ${z.filter(x => x.code !== s.code).map(x => `<option value="${esc(x.code)}">${esc(x.name)}</option>`).join('')}</select></div>`).join('');
+}
+function swapsNow() { const o = {}; document.querySelectorAll('#swaps select').forEach(s => { if (s.value) o[s.dataset.from] = s.value; }); return o; }
 function parentSku() {
   const p = M.products.find(x => x.name === $('#product').value), s = M.styles.find(x => x.name === $('#style').value);
   return p && s && $('#code').value ? `${p.code}-${s.code}-${$('#code').value}` : '';
@@ -78,11 +66,48 @@ function parentSku() {
 function preview() {
   if (!M) return;
   const par = parentSku(), n = checked('#sizes').length;
-  $('#skuprev').innerHTML = par ? `<span class="hint">New SKU</span> <b>${esc(par)}</b> <span class="hint">with ${n} size${n == 1 ? '' : 's'}</span>` : '';
+  let t = par ? `<span class="hint">${ED ? 'SKU' : 'New SKU'}</span> <b>${esc(par)}</b> <span class="hint">with ${n} size${n == 1 ? '' : 's'}</span>` : '';
+  if (ED && par && par !== ED.parent)
+    t += `<div class="hint">Code changes from ${esc(ED.parent)}.${ED.used ? ' ' + ED.used + ' old entries will move to the new code.' : ''}</div>`;
+  if (ED && !sameGroup() && ED.used) t += '<div class="warnline">Size range cannot change: this SKU has stock entries.</div>';
+  if (sameGroup()) {
+    const sw = swapsNow(), on = checked('#sizes');
+    const off = ED.sizes.filter(s => s.used && !s.off && !sw[s.code] && !on.includes(s.code));
+    if (off.length) t += `<div class="hint">${off.map(s => esc(s.size)).join(', ')} has entries, so it will be set inactive (history kept).</div>`;
+  }
+  $('#skuprev').innerHTML = t;
 }
+function setSt(v) { ST = v; [...$('#stSeg').children].forEach(x => x.classList.toggle('on', x.dataset.v === v)); }
+
+function openEdit(par) {
+  ED = ALL.find(p => p.parent === par); if (!ED) return;
+  ED.group = grpOf(ED.product);
+  $('#formCard').hidden = false; $('#edBar').hidden = false; $('#stBox').hidden = false;
+  $('#edCode').textContent = ED.parent;
+  $('#product').value = ED.product; $('#style').value = ED.style;
+  $('#name').value = ED.name; $('#code').value = ED.nameCode || ED.parent.split('-').slice(2).join(''); codeTouched = true;
+  $('#price').value = ED.price || ''; $('#notes').value = ED.notes || ''; setSt(ED.status);
+  IMG = null; $('#photo').value = ''; $('#prev').src = ED.image || ''; $('#prev').hidden = !ED.image;
+  $('#save').textContent = 'Update SKU';
+  drawSizes();
+  $('#formCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function resetForm() {
+  ED = null; codeTouched = false; IMG = null;
+  $('#edBar').hidden = true; $('#stBox').hidden = true;
+  ['name','code','price','notes'].forEach(id => $('#' + id).value = '');
+  $('#photo').value = ''; $('#prev').hidden = true;
+  $('#save').textContent = 'Create SKU';
+  $('#formCard').hidden = !can('SKU_CREATE');
+  drawSizes();
+}
+
 $('#sizes').onchange = e => { e.target.closest('.tag').classList.toggle('off', !e.target.checked); preview(); };
+$('#swaps').onchange = preview;
 $('#product').onchange = drawSizes;
 $('#style').onchange = preview;
+$('#stSeg').onclick = e => { const b = e.target.closest('button'); if (b) setSt(b.dataset.v); };
+$('#cancelEd').onclick = resetForm;
 $('#name').oninput = () => { if (!codeTouched) $('#code').value = code($('#name').value); preview(); };
 $('#code').oninput = () => { codeTouched = true; $('#code').value = code($('#code').value); preview(); };
 $('#photo').onchange = async e => {
@@ -90,92 +115,54 @@ $('#photo').onchange = async e => {
   try { IMG = await resizeImage(f); $('#prev').src = IMG.url; $('#prev').hidden = false; } catch (err) { toast(err.message, 1); }
 };
 $('#save').onclick = async () => {
-  const sizes = checked('#sizes');
+  const sizes = checked('#sizes'), swaps = ED ? swapsNow() : {};
   if (!$('#name').value.trim()) return toast('Enter colour / print name', 1);
-  if (!sizes.length) return toast('Select at least one size', 1);
-  const b = $('#save'); b.disabled = true; b.textContent = 'Creating…';
+  if (!sizes.length && !Object.keys(swaps).length) return toast('Select at least one size', 1);
+  const par = parentSku();
+  if (ED) {
+    if (par !== ED.parent && ED.used && !confirm('SKU code will change from ' + ED.parent + ' to ' + par + '. All old entries will move to the new code. Continue?')) return;
+    const stock = ED.sizes.reduce((a, s) => a + s.inProd + s.ready, 0);
+    if (ST === 'Inactive' && ED.status !== 'Inactive' && stock > 0 && !confirm(ED.parent + ' still has ' + stock + ' pcs in stock. Make it inactive anyway?')) return;
+  }
+  const b = $('#save'), label = b.textContent; b.disabled = true; b.textContent = 'Saving…';
+  const data = { product: $('#product').value, style: $('#style').value, name: $('#name').value.trim(), nameCode: $('#code').value,
+    price: $('#price').value, notes: $('#notes').value, sizes, image: IMG && IMG.b64, mime: IMG && IMG.mime };
   try {
-    const r = await api('createSku', {
-      product: $('#product').value, style: $('#style').value, name: $('#name').value.trim(), nameCode: $('#code').value,
-      price: $('#price').value, notes: $('#notes').value, sizes, image: IMG && IMG.b64, mime: IMG && IMG.mime
-    });
-    toast('Created ' + r.parent + ' with ' + r.sizes.length + ' sizes');
-    ['name','code','price','notes'].forEach(id => $('#' + id).value = '');
-    $('#photo').value = ''; $('#prev').hidden = true; IMG = null; codeTouched = false;
-    drawSizes(); loadList();
+    if (ED) {
+      const r = await api('editSku', Object.assign(data, { parent: ED.parent, status: ST, swaps }));
+      toast('Updated ' + r.parent + (r.moved ? ' (' + r.moved + ' history rows moved)' : ''));
+    } else {
+      const r = await api('createSku', data);
+      toast('Created ' + r.parent + ' with ' + r.sizes.length + ' sizes');
+    }
+    resetForm(); loadList();
   } catch (e) { toast(e.message, 1); }
-  b.disabled = false; b.textContent = 'Create SKU';
+  b.disabled = false; b.textContent = ED ? 'Update SKU' : label;
 };
 
-/* ---------- List ---------- */
 async function loadList() {
   try { ALL = (await api('skuList', { all: true })).skus; drawList(); }
   catch (e) { $('#list').textContent = e.message; }
 }
 function drawList() {
+  const edit = can('SKU_EDIT');
   skuFilter($('#flt'), ALL.slice().reverse(), f => {
     $('#list').innerHTML = f.length ? f.slice(0, 60).map(p => {
       const off = p.status === 'Inactive';
       return `<div class="pick-item ${off ? 'inactive' : ''}">${thumb(p.image)}
         <div><b>${esc(p.name)}</b> ${off ? '<span class="b-off">Inactive</span>' : ''}
-        <div class="hint">${esc(p.parent)} | ${p.sizes.map(s => esc(s.size)).join(', ')}${p.price ? ' | ₹' + esc(p.price) : ''}</div></div>
-        <button class="ebtn" data-p="${esc(p.parent)}">Edit</button></div>`;
+        <div class="hint">${esc(p.parent)} | ${p.sizes.filter(s => !s.off).map(s => esc(s.size)).join(', ')}${p.price ? ' | ₹' + esc(p.price) : ''}</div></div>
+        ${edit ? `<button class="ebtn" data-p="${esc(p.parent)}">Edit</button>` : ''}</div>`;
     }).join('') + (f.length > 60 ? '<p class="hint">Showing first 60. Use the filters to narrow down.</p>' : '')
-      : (ALL.length ? 'No SKU matches these filters.' : 'No SKUs yet. Create the first one above.');
+      : (ALL.length ? 'No SKU matches these filters.' : 'No SKUs yet.');
   }, true);
 }
 $('#list').onclick = e => { const b = e.target.closest('.ebtn'); if (b) openEdit(b.dataset.p); };
 
-/* ---------- Edit ---------- */
-function setSt(v) {
-  EST = v;
-  [...$('#eStatus').children].forEach(x => x.classList.toggle('on', x.dataset.v === v));
-  $('#eStHint').textContent = v === 'Inactive' ? 'Inactive SKUs are hidden from production, ready and reservation forms.' : '';
-}
-function openEdit(par) {
-  ED = ALL.find(p => p.parent === par); if (!ED) return;
-  EIMG = null; $('#eErr').textContent = ''; $('#ePhoto').value = '';
-  $('#edTitle').textContent = ED.parent;
-  $('#eName').value = ED.name; $('#ePrice').value = ED.price || ''; $('#eNotes').value = ED.notes || '';
-  setSt(ED.status === 'Inactive' ? 'Inactive' : 'Active');
-  $('#eImg').src = ED.image || ''; $('#eImg').hidden = !ED.image;
-  const prod = M.products.find(x => x.name === ED.product);
-  const have = ED.sizes.map(s => s.sku.slice(ED.parent.length + 1));
-  const more = prod ? M.sizes.filter(z => z.group === prod.group && !have.includes(z.code)) : [];
-  $('#eSizes').innerHTML = ED.sizes.map(s => `<div class="tag have"><b>${esc(s.size)}</b></div>`).join('')
-    + more.map(z => `<label class="tag check off"><input type="checkbox" value="${esc(z.code)}"><b>+ ${esc(z.name)}</b></label>`).join('');
-  $('#ed').showModal();
-}
-$('#edClose').onclick = () => $('#ed').close();
-$('#eStatus').onclick = e => { const b = e.target.closest('button'); if (b) setSt(b.dataset.v); };
-$('#eSizes').onchange = e => e.target.closest('.tag').classList.toggle('off', !e.target.checked);
-$('#ePhoto').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  try { EIMG = await resizeImage(f); $('#eImg').src = EIMG.url; $('#eImg').hidden = false; } catch (err) { $('#eErr').textContent = err.message; }
-};
-$('#eSave').onclick = async () => {
-  $('#eErr').textContent = '';
-  if (!$('#eName').value.trim()) { $('#eErr').textContent = 'Enter colour / print name'; return; }
-  const stock = ED.sizes.reduce((a, s) => a + s.inProd + s.ready, 0);
-  if (EST === 'Inactive' && ED.status !== 'Inactive' && stock > 0 &&
-      !confirm(ED.parent + ' still has ' + stock + ' pcs in stock. Make it inactive anyway?')) return;
-  const b = $('#eSave'); b.disabled = true; b.textContent = 'Saving…';
-  try {
-    const r = await api('updateSku', {
-      parent: ED.parent, name: $('#eName').value.trim(), price: $('#ePrice').value, notes: $('#eNotes').value,
-      status: EST, addSizes: checked('#eSizes'), image: EIMG && EIMG.b64, mime: EIMG && EIMG.mime
-    });
-    $('#ed').close();
-    toast('Saved ' + ED.parent + (r.added ? ' (+' + r.added + ' sizes)' : ''));
-    loadList();
-  } catch (e) { $('#eErr').textContent = e.message; }
-  b.disabled = false; b.textContent = 'Save changes';
-};
-
-gate(['ADMIN','SKU'], async () => {
+gate(['SKU_CREATE','SKU_EDIT'], async () => {
   try { M = await api('masters'); } catch (e) { return toast(e.message, 1); }
   $('#product').innerHTML = M.products.map(p => `<option>${esc(p.name)}</option>`).join('');
   $('#style').innerHTML = M.styles.map(s => `<option>${esc(s.name)}</option>`).join('');
-  drawSizes(); loadList();
+  resetForm(); loadList();
 });
 </script></body></html>
