@@ -1,5 +1,4 @@
-// ===== STEP: paste your Apps Script Web App URL here =====
-const API = 'https://script.google.com/macros/s/AKfycbwfQfyqVuFbvYs6S5Cf0Y7rj9hkdR5ydXkqflLAPAXGborC0i-gV9qP9sIuKdsoe7yN/exec';
+// Web App URL is kept in config.js (upload it once, never overwritten again)
 const KEY = 'pivotaalstock2026';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -32,15 +31,20 @@ function userBar(u) {
   c.onclick = () => { if (confirm('Log out ' + u.name + '?')) { localStorage.removeItem('pse_user'); location.href = 'index.html'; } };
 }
 
-// Login gate. roles = null means any logged-in user.
-function gate(roles, start) {
-  const u = me(), main = $('main');
-  if (u && (!roles || u.roles.some(r => roles.includes(r)))) { userBar(u); main.hidden = false; start(u); return; }
+// Permission check for the logged-in user
+function can(p) { const u = me(); return !!u && (u.admin || (u.perms || []).includes(p)); }
+
+// Login gate. perms = list of permission keys (any one is enough). null = any logged-in user.
+function gate(perms, start) {
+  let u = me();
+  if (u && !u.perms) { localStorage.removeItem('pse_user'); u = null; } // old login, ask PIN again
+  const main = $('main');
+  if (u && (!perms || perms.some(can))) { userBar(u); main.hidden = false; start(u); return; }
   main.hidden = true;
   const box = document.createElement('div');
   box.className = 'card login';
   box.innerHTML = u
-    ? `<h2>No access</h2><p>${esc(u.name)}, this page is not in your role.</p>
+    ? `<h2>No access</h2><p>${esc(u.name)}, you don't have permission for this page.</p>
        <a class="btn ghost" href="index.html">Back to home</a><button class="btn" id="lo">Log in as someone else</button>`
     : `<h2>Enter your PIN</h2><input id="pin" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN">
        <button class="btn" id="go">Log in</button><p class="hint" id="err"></p>`;
@@ -51,7 +55,7 @@ function gate(roles, start) {
     $('#go').disabled = true; $('#err').textContent = '';
     try {
       const r = await api('login', {}, pin);
-      localStorage.setItem('pse_user', JSON.stringify({ name: r.user.name, roles: r.user.roles, pin }));
+      localStorage.setItem('pse_user', JSON.stringify({ name: r.user.name, admin: r.user.admin, perms: r.user.perms, pin }));
       location.reload();
     } catch (e) { $('#err').textContent = e.message; $('#go').disabled = false; }
   };
