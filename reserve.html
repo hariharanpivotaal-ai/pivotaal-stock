@@ -1,10 +1,11 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5"><title>Reservation</title></head><body>
+<link rel="stylesheet" href="style.css?v=7"><title>Reservation</title></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Reservation</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card notify" id="notify" hidden></div>
+<div class="card alertcard" id="alert" hidden></div>
 <div class="card">
   <h2>New reservation</h2>
   <div class="row">
@@ -16,6 +17,7 @@
     <div><label for="notes">Notes</label><input id="notes"></div>
   </div>
   <div id="items"></div>
+  <div class="card alertcard" id="reqHint" hidden style="margin:12px 0 0"></div>
   <button class="btn ghost" id="addItem">+ Add colour / print</button>
   <div class="total"><span>Total to reserve</span><span id="tot">0 pcs</span></div>
   <button class="btn" id="save">Reserve stock</button>
@@ -23,7 +25,7 @@
 <div class="card">
   <h2>Reservations</h2>
   <div class="filters">
-    <select id="fSt" aria-label="Status"><option value="open">Open</option><option value="all">All (incl. closed, cancelled)</option></select>
+    <select id="fSt" aria-label="Status"><option value="open">Open</option><option value="old">Waiting too long (ready)</option><option value="all">All (incl. closed, cancelled)</option></select>
     <input id="fQ" type="search" placeholder="Search customer, colour or SKU" aria-label="Search reservations">
   </div>
   <div class="hint fc" id="fCount"></div>
@@ -46,9 +48,10 @@
   <label for="eReason" style="margin-top:22px">Cancel reason</label><input id="eReason" placeholder="e.g. Customer changed order">
   <button class="btn ghost" id="eCancel" style="color:var(--red);border-color:var(--red);margin-top:10px">Cancel reservation</button>
 </div></dialog>
-<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
+<script src="config.js?v=7"></script><script src="app.js?v=7"></script>
 <script>
-let SKUS = [], ITEMS = [], RES = [], ER = null;
+let SKUS = [], ITEMS = [], RES = [], ER = null, ADAYS = 30;
+if (new URLSearchParams(location.search).get('f') === 'old') document.getElementById('fSt').value = 'old';
 $('#date').value = today();
 
 async function loadBase() {
@@ -65,12 +68,20 @@ function drawItems() {
       ${stockTable(p.sizes)}
       <label>Qty to reserve <button class="linkbtn" data-all="${i}">Reserve all available</button></label>
       <div class="tags">${p.sizes.map(s => `<div class="tag"><b>${esc(s.size)}</b><small>Avail ${s.avail}</small>
-        <input type="number" inputmode="numeric" min="0" max="${Math.max(0, s.avail)}" data-i="${i}" data-sku="${esc(s.sku)}" value="${it.q[s.sku] || ''}" aria-label="${esc(s.size)} qty" style="margin-top:6px"></div>`).join('')}</div></div>`;
+        <input type="number" inputmode="numeric" min="0" max="${Math.max(0, s.avail)}" data-none="No stock" data-i="${i}" data-sku="${esc(s.sku)}" value="${it.q[s.sku] || ''}" aria-label="${esc(s.size)} qty" style="margin-top:6px"></div>`).join('')}</div></div>`;
   }).join('');
-  sumUp();
+  overCheck($('#items')); sumUp();
 }
-function sumUp() { $('#tot').textContent = ITEMS.reduce((a, it) => a + Object.values(it.q).reduce((x, y) => x + (Number(y) || 0), 0), 0) + ' pcs'; }
-$('#items').oninput = e => { const t = e.target; if (t.dataset.sku) { ITEMS[t.dataset.i].q[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+function reqHint() {
+  const over = [...document.querySelectorAll('#items .tag.over input')].map(i => ITEMS[i.dataset.i].p);
+  const box = $('#reqHint');
+  if (!over.length || !can('REQUEST')) { box.hidden = true; return; }
+  const p = over[0];
+  box.innerHTML = `<b>Not enough stock for ${esc(p.name)}?</b> <a href="request.html?sku=${encodeURIComponent(p.parent)}&cust=${encodeURIComponent($('#cust').value.trim())}">Raise a stock request</a> to produce or buy it.`;
+  box.hidden = false;
+}
+function sumUp() { reqHint(); $('#tot').textContent = ITEMS.reduce((a, it) => a + Object.values(it.q).reduce((x, y) => x + (Number(y) || 0), 0), 0) + ' pcs'; }
+$('#items').oninput = e => { const t = e.target; if (t.dataset.sku) { ITEMS[t.dataset.i].q[t.dataset.sku] = Math.round(Number(t.value) || 0); markTag(t); sumUp(); } };
 $('#items').onclick = e => {
   const rm = e.target.closest('[data-rm]'), all = e.target.closest('[data-all]');
   if (rm) { ITEMS.splice(Number(rm.dataset.rm), 1); drawItems(); }
@@ -87,6 +98,7 @@ $('#save').onclick = async () => {
   const items = ITEMS.map(it => ({ parent: it.p.parent, lines: Object.keys(it.q).map(k => ({ sku: k, qty: it.q[k] })).filter(l => l.qty > 0) })).filter(it => it.lines.length);
   if (!$('#cust').value.trim()) return toast('Enter customer name', 1);
   if (!items.length) return toast('Add a colour and enter qty', 1);
+  if (!overCheck($('#items'))) return toast('Less stock available. Check the red sizes.', 1);
   const b = $('#save'); b.disabled = true; b.textContent = 'Saving…';
   try {
     const r = await api('reserve', { customer: $('#cust').value.trim(), date: $('#date').value, advance: $('#adv').value, notes: $('#notes').value, items });
@@ -99,15 +111,18 @@ $('#save').onclick = async () => {
 
 /* ---------- List ---------- */
 async function loadList() {
-  try { RES = (await api('reservations', { open: $('#fSt').value === 'open' })).rows; drawList(); }
+  try {
+    const r = await api('reservations', { open: $('#fSt').value !== 'all' });
+    RES = r.rows; ADAYS = r.alertDays; drawList(); drawAlert();
+  }
   catch (e) { $('#list').textContent = e.message; }
 }
 function drawList() {
   const q = $('#fQ').value.trim().toLowerCase(), edit = can('RESERVE');
-  const f = RES.filter(r => !q || [r.customer, r.name, r.parent, r.style].join(' ').toLowerCase().includes(q));
+  const f = RES.filter(r => ($('#fSt').value !== 'old' || r.alert) && (!q || [r.customer, r.name, r.parent, r.style].join(' ').toLowerCase().includes(q)));
   $('#fCount').textContent = 'Showing ' + f.length + ' reservations';
   $('#list').innerHTML = f.length ? f.map(r => `<div class="rec" style="display:flex;gap:12px;align-items:flex-start">${thumb(r.image)}
-    <div style="flex:1"><b>${esc(r.customer)}</b> | ${esc(r.name)} <span class="mini">${esc(r.style)}</span><div>${statusBadge(r)}</div>
+    <div style="flex:1"><b>${esc(r.customer)}</b> | ${esc(r.name)} <span class="mini">${esc(r.style)}</span><div>${statusBadge(r)}${r.alert ? ` <span class="b-short">Waiting ${r.days} days</span>` : ''}</div>
     <div class="mini">${r.lines.map(l => esc(l.size) + ': ' + l.qty + (l.bal !== l.qty && r.status !== 'Cancelled' ? ' (bal ' + Math.max(0, l.bal) + ')' : '')).join(', ')}</div>
     <div class="mini">Total ${r.total} pcs${r.bal && r.bal !== r.total ? ', balance ' + r.bal : ''} | ${esc(r.date)} | ${esc(r.by)}${r.advance ? ' | Adv ₹' + esc(r.advance) : ''}${r.invoices ? ' | Inv ' + esc(r.invoices) : ''}${r.notes ? ' | ' + esc(r.notes) : ''}</div></div>
     ${edit && ['Open','Part dispatched'].includes(r.status) ? `<button class="ebtn" data-id="${esc(r.id)}">Edit</button>` : ''}</div>`).join('')
@@ -117,6 +132,14 @@ $('#fSt').onchange = loadList;
 $('#fQ').oninput = drawList;
 $('#list').onclick = e => { const b = e.target.closest('.ebtn'); if (b) openRes(b.dataset.id); };
 
+function drawAlert() {
+  const al = RES.filter(r => r.alert);
+  $('#alert').hidden = !al.length;
+  $('#alert').innerHTML = `<b>⚠ ${al.length} reservation${al.length > 1 ? 's' : ''}: stock ready, waiting more than ${ADAYS} days</b>
+    <div class="mini" style="margin-top:6px">${al.slice(0, 8).map(r => `${esc(r.customer)} | ${esc(r.name)} | ${r.days} days`).join('<br>')}${al.length > 8 ? '<br>…' : ''}</div>
+    ${$('#fSt').value !== 'old' ? '<button class="linkbtn" id="showOld" style="margin-top:6px">Show these only</button>' : ''}`;
+  const b = $('#showOld'); if (b) b.onclick = () => { $('#fSt').value = 'old'; drawList(); drawAlert(); };
+}
 /* ---------- Edit / cancel ---------- */
 function openRes(id) {
   ER = RES.find(r => r.id === id); if (!ER) return;
