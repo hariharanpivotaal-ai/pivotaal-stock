@@ -1,10 +1,10 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5"><title>Pivotaal Stock</title></head><body>
+<link rel="stylesheet" href="style.css?v=7"><title>Pivotaal Stock</title></head><body>
 <header class="top"><h1>Pivotaal Stock</h1><button class="chip" id="user"></button></header>
-<main hidden><div class="tiles" id="tiles"></div></main>
-<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
+<main hidden><div class="card alertcard" id="alert" hidden></div><div class="card notify" id="ralert" hidden></div><div class="tiles" id="tiles"></div></main>
+<script src="config.js?v=7"></script><script src="app.js?v=7"></script>
 <script>
 const TILES = [
   { href:'sku.html', t:'Create / Edit SKU', d:'Colour or print with sizes and photo', perms:['SKU_CREATE','SKU_EDIT'] },
@@ -12,6 +12,7 @@ const TILES = [
   { href:'entry.html?m=ready', t:'Ready inward', d:'Move packed qty to ready to dispatch', perms:['READY_ENTRY'] },
   { href:'reserve.html', t:'Reservation', d:'Reserve stock for a customer', perms:['RESERVE'] },
   { href:'dispatch.html', t:'Dispatch', d:'Invoice outward, reserved or ready stock', perms:['DISPATCH'] },
+  { href:'request.html', t:'Stock request', d:'Ask to produce or buy stock not available', perms:['REQUEST','REQ_MANAGE'] },
   { t:'Live stock', d:'Size-wise balance, ageing, photos', soon:'Coming in phase 3' },
   { href:'users.html', t:'Users & permissions', d:'Add staff, PINs and access', perms:['USERS'] }
 ];
@@ -19,5 +20,20 @@ gate(null, u => {
   $('#tiles').innerHTML = TILES.filter(x => x.soon || x.perms.some(can)).map(x => x.soon
     ? `<div class="tile soon"><b>${x.t}</b><span>${x.d}</span><em>${x.soon}</em></div>`
     : `<a class="tile" href="${x.href}"><b>${x.t}</b><span>${x.d}</span></a>`).join('');
+  if (can('RESERVE') || can('DISPATCH')) api('resAlerts').then(r => {
+    if (!r.rows.length) return;
+    $('#alert').innerHTML = `<b>⚠ ${r.rows.length} reservation${r.rows.length > 1 ? 's' : ''}: stock ready, waiting more than ${r.alertDays} days</b>
+      <div class="mini" style="margin-top:6px">${r.rows.slice(0, 5).map(x => `${esc(x.customer)} | ${esc(x.name)} | ${x.days} days`).join('<br>')}</div>
+      ${can('RESERVE') ? '<a href="reserve.html?f=old">View reservations</a>' : ''}`;
+    $('#alert').hidden = false;
+  }).catch(() => {});
+  if (can('REQ_MANAGE')) api('reqAlerts').then(r => {
+    if (!r.rows.length) return;
+    const p = r.rows.filter(x => x.status === 'Pending').length, o = r.rows.filter(x => x.overdue).length;
+    $('#ralert').innerHTML = `<b>📦 Stock requests: ${p} waiting for decision${o ? ', ' + o + ' overdue' : ''}</b>
+      <div class="mini" style="margin-top:6px">${r.rows.slice(0, 5).map(x => `${esc(x.name)} | ${x.total} pcs | ${esc(x.customer || '')}${x.priority === 'Urgent' ? ' | URGENT' : ''}`).join('<br>')}</div>
+      <a class="linkbtn" href="request.html">Open requests</a>`;
+    $('#ralert').hidden = false;
+  }).catch(() => {});
 });
 </script></body></html>
