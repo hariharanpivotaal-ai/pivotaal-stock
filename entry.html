@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5"><title>Stock entry</title></head><body>
+<link rel="stylesheet" href="style.css?v=7"><title>Stock entry</title></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1 id="title">Production entry</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card"><h2>Select SKU</h2><div id="picker"></div></div>
@@ -41,7 +41,7 @@
   <button class="btn" id="eSave">Save changes</button>
   <button class="btn ghost" id="eDel" style="color:var(--red);border-color:var(--red);margin-top:10px">Delete entry</button>
 </div></dialog>
-<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
+<script src="config.js?v=7"></script><script src="app.js?v=7"></script>
 <script>
 const MODE = new URLSearchParams(location.search).get('m') === 'ready' ? 'ready' : 'prod';
 const T = MODE === 'ready'
@@ -69,7 +69,7 @@ function pick(p, scroll) {
 function drawGrid() {
   const fromProd = MODE === 'ready' && SRC === 'PROD';
   $('#grid').innerHTML = CUR.sizes.map(s => `<div class="tag"><b>${esc(s.size)}</b>
-    <input type="number" inputmode="numeric" min="0" style="margin-top:6px" ${fromProd ? 'max="' + s.inProd + '"' : ''} data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"></div>`).join('');
+    <input type="number" inputmode="numeric" min="0" style="margin-top:6px" ${fromProd ? 'max="' + Math.max(0, s.inProd) + '" data-none="Nothing in production" data-word="in production"' : ''} data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"></div>`).join('');
   $('#stk').innerHTML = stockTable(CUR.sizes);
   $('#qtyLbl').textContent = MODE === 'ready' ? (fromProd ? 'Size-wise packed qty (moves from In production)' : 'Size-wise qty to add to Ready') : 'Size-wise qty to add to production';
   $('#closeBox').hidden = !fromProd;
@@ -132,10 +132,11 @@ $('#src').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
   SRC = b.dataset.v; [...$('#src').children].forEach(x => x.classList.toggle('on', x === b)); drawGrid();
 };
-$('#grid').oninput = sumUp;
+$('#grid').oninput = e => { markTag(e.target); sumUp(); };
 $('#save').onclick = async () => {
   const L = lines(), close = MODE === 'ready' && SRC === 'PROD' && $('#close').checked;
   if (!L.length && !close) return toast('Enter qty for at least one size', 1);
+  if (!overCheck($('#grid'))) return toast('Less qty in production. Check the red sizes.', 1);
   if (close) {
     const left = CUR.sizes.reduce((a, s) => { const l = L.find(x => x.sku === s.sku); return a + Math.max(0, s.inProd - (l ? l.qty : 0)); }, 0);
     if (left > 0 && !confirm(left + ' pcs still in production will be marked short / rejection. Continue?')) return;
