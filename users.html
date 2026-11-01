@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3"><title>Users & permissions</title></head><body>
+<link rel="stylesheet" href="style.css?v=5"><title>Users & permissions</title></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Users & permissions</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card"><button class="btn" id="add" style="margin-top:0">+ Add user</button></div>
@@ -23,10 +23,10 @@
   <p class="err" id="uErr" role="alert"></p>
   <button class="btn" id="uSave">Save user</button>
 </div></dialog>
-<script src="config.js?v=3"></script><script src="app.js?v=3"></script>
+<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
 <script>
 const LBL = { SKU_CREATE:'Create SKU', SKU_EDIT:'Edit SKU', PROD_ENTRY:'Production entry', READY_ENTRY:'Ready inward', ENTRY_EDIT:'Edit / delete stock entries',
-  RESERVE:'Reservation (phase 2)', DISPATCH:'Dispatch (phase 2)', REPORT:'Live stock report (phase 3)', USERS:'Manage users & permissions' };
+  RESERVE:'Reservation (create, edit, cancel)', DISPATCH:'Dispatch', REPORT:'Live stock report (phase 3)', USERS:'Manage users & permissions' };
 let U = [], P = [], CUR = null, ACT = 'Yes';
 
 async function load() {
