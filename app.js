@@ -133,3 +133,29 @@ function skuPicker(box, skus, onPick) {
   list.onclick = choose;
   list.onkeydown = e => { if (e.key === 'Enter') choose(e); };
 }
+
+// Size-wise stock table: rows In production / Ready / Reserved / Available
+function stockTable(S, rows) {
+  rows = rows || ['inProd', 'ready', 'reserved', 'avail'];
+  const R = { inProd: ['In production', 'b-prod'], ready: ['Ready', 'b-ready'], reserved: ['Reserved', 'b-res'], avail: ['Available', 'b-avail'] };
+  const sum = k => S.reduce((a, s) => a + (s[k] || 0), 0);
+  return `<div class="stk"><table><thead><tr><th></th>${S.map(s => `<th>${esc(s.size)}</th>`).join('')}<th class="tt">Total</th></tr></thead><tbody>
+    ${rows.map(k => `<tr class="${k === 'avail' ? 'sumrow' : ''}"><th><span class="${R[k][1]}">${R[k][0]}</span></th>
+      ${S.map(s => `<td>${s[k] || 0}</td>`).join('')}<td class="tt">${sum(k)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+// WhatsApp link (adds 91 for 10-digit Indian numbers)
+function waLink(phone, msg) {
+  let p = String(phone || '').replace(/\D/g, '');
+  if (p.length === 10) p = '91' + p;
+  return 'https://wa.me/' + p + '?text=' + encodeURIComponent(msg);
+}
+function fileToB64(file) {
+  return new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = () => fail(new Error('Could not read file')); r.readAsDataURL(file); });
+}
+const STAGE = { READY: ['Ready to dispatch', 'b-ready'], PART: ['Partly ready', 'b-prod'], PROD: ['In production', 'b-prod'] };
+function statusBadge(r) {
+  if (r.status === 'Cancelled') return '<span class="b-short">Cancelled</span>';
+  if (r.status === 'Closed') return '<span class="b-off">Closed</span>';
+  const s = STAGE[r.stage] || STAGE.PROD;
+  return `<span class="${s[1]}">${s[0]}</span>${r.status === 'Part dispatched' ? ' <span class="b-avail">Part dispatched</span>' : ''}`;
+}
