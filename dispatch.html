@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5"><title>Dispatch</title></head><body>
+<link rel="stylesheet" href="style.css?v=7"><title>Dispatch</title></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Dispatch</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card">
@@ -43,7 +43,7 @@
   <button class="btn" id="eSave">Save changes</button>
   <button class="btn ghost" id="eDel" style="color:var(--red);border-color:var(--red);margin-top:10px">Delete dispatch (stock goes back)</button>
 </div></dialog>
-<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
+<script src="config.js?v=7"></script><script src="app.js?v=7"></script>
 <script>
 let SKUS = [], RITEMS = [], DITEMS = [], PDF = null;
 $('#date').value = today();
@@ -68,16 +68,16 @@ async function loadCustRes() {
 function drawRes() {
   $('#resCard').hidden = !RITEMS.length;
   $('#resItems').innerHTML = RITEMS.map((it, i) => { const r = it.r;
-    return `<div class="item resv"><div class="ihead">${thumb(r.image)}<div><b>${esc(r.name)}</b> ${statusBadge(r)}
+    return `<div class="item resv"><div class="ihead">${thumb(r.image)}<div><b>${esc(r.name)}</b> ${statusBadge(r)}${r.alert ? ` <span class="b-short">Waiting ${r.days} days</span>` : ''}
       <div class="hint">${esc(r.parent)} | ${esc(r.id)} | ${esc(r.date)}</div></div></div>
       <label>Dispatch qty <button class="linkbtn" data-fill="${i}">Fill reserved qty</button></label>
       <div class="tags">${r.lines.filter(l => l.bal > 0).map(l => `<div class="tag"><b>${esc(l.size)}</b><small>Bal ${l.bal} | Ready ${l.ready}</small>
-        ${tagInput(`max="${Math.min(l.bal, l.ready)}" data-r="${i}" data-sku="${esc(l.sku)}" aria-label="${esc(l.size)} qty"`, it.q[l.sku])}</div>`).join('')}</div>
+        ${tagInput(`max="${Math.max(0, Math.min(l.bal, l.ready))}" data-none="No ready stock" data-word="ready" data-r="${i}" data-sku="${esc(l.sku)}" aria-label="${esc(l.size)} qty"`, it.q[l.sku])}</div>`).join('')}</div>
       <label class="pl" style="border:0"><input type="checkbox" data-close="${i}" ${it.close ? 'checked' : ''}> Close this reservation after dispatch (release balance qty)</label></div>`;
   }).join('');
-  sumUp();
+  overCheck($('#resItems')); sumUp();
 }
-$('#resItems').oninput = e => { const t = e.target; if (t.dataset.sku) { RITEMS[t.dataset.r].q[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#resItems').oninput = e => { const t = e.target; if (t.dataset.sku) { RITEMS[t.dataset.r].q[t.dataset.sku] = Math.round(Number(t.value) || 0); markTag(t); sumUp(); } };
 $('#resItems').onchange = e => { const t = e.target; if (t.dataset.close !== undefined) RITEMS[t.dataset.close].close = t.checked; };
 $('#resItems').onclick = e => {
   const f = e.target.closest('[data-fill]'); if (!f) return;
@@ -94,11 +94,11 @@ function drawItems() {
       ${stockTable(p.sizes)}
       <label>Dispatch qty</label>
       <div class="tags">${p.sizes.map(s => { const free = Math.max(0, Math.min(s.ready, s.avail));
-        return `<div class="tag"><b>${esc(s.size)}</b><small>Free ${free}</small>${tagInput(`max="${free}" data-i="${i}" data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"`, it.q[s.sku])}</div>`; }).join('')}</div></div>`;
+        return `<div class="tag"><b>${esc(s.size)}</b><small>Free ${free}</small>${tagInput(`max="${free}" data-none="No free stock" data-word="free" data-i="${i}" data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"`, it.q[s.sku])}</div>`; }).join('')}</div></div>`;
   }).join('') : '<p class="hint">For B2B outward without reservation. Add each colour from the invoice and enter size-wise qty.</p>';
   sumUp();
 }
-$('#items').oninput = e => { const t = e.target; if (t.dataset.sku) { DITEMS[t.dataset.i].q[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#items').oninput = e => { const t = e.target; if (t.dataset.sku) { DITEMS[t.dataset.i].q[t.dataset.sku] = Math.round(Number(t.value) || 0); markTag(t); sumUp(); } };
 $('#items').onclick = e => { const rm = e.target.closest('[data-rm]'); if (rm) { DITEMS.splice(Number(rm.dataset.rm), 1); drawItems(); } };
 function openPicker() {
   skuPicker($('#picker'), SKUS.filter(p => !DITEMS.some(it => it.p.parent === p.parent)), p => {
@@ -131,6 +131,7 @@ $('#save').onclick = async () => {
   if (!$('#cust').value.trim()) return toast('Enter customer name', 1);
   if (!$('#inv').value.trim()) return toast('Enter invoice number', 1);
   if (!items.length) return toast('Enter dispatch qty for at least one size', 1);
+  if (!overCheck($('#resItems')) || !overCheck($('#items'))) return toast('Less stock available. Check the red sizes.', 1);
   const b = $('#save'); b.disabled = true; b.textContent = PDF ? 'Uploading invoice…' : 'Saving…';
   try {
     const r = await api('dispatch', { customer: $('#cust').value.trim(), date: $('#date').value, invoiceNo: $('#inv').value.trim(),
