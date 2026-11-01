@@ -1,17 +1,17 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3"><title>Pivotaal Stock</title></head><body>
+<link rel="stylesheet" href="style.css?v=5"><title>Pivotaal Stock</title></head><body>
 <header class="top"><h1>Pivotaal Stock</h1><button class="chip" id="user"></button></header>
 <main hidden><div class="tiles" id="tiles"></div></main>
-<script src="config.js?v=3"></script><script src="app.js?v=3"></script>
+<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
 <script>
 const TILES = [
   { href:'sku.html', t:'Create / Edit SKU', d:'Colour or print with sizes and photo', perms:['SKU_CREATE','SKU_EDIT'] },
   { href:'entry.html?m=prod', t:'Production entry', d:'Size-wise qty going into production', perms:['PROD_ENTRY'] },
   { href:'entry.html?m=ready', t:'Ready inward', d:'Move packed qty to ready to dispatch', perms:['READY_ENTRY'] },
-  { t:'Reservation', d:'Reserve stock for a customer', soon:'Coming in phase 2' },
-  { t:'Dispatch', d:'Close reservations and B2B outward', soon:'Coming in phase 2' },
+  { href:'reserve.html', t:'Reservation', d:'Reserve stock for a customer', perms:['RESERVE'] },
+  { href:'dispatch.html', t:'Dispatch', d:'Invoice outward, reserved or ready stock', perms:['DISPATCH'] },
   { t:'Live stock', d:'Size-wise balance, ageing, photos', soon:'Coming in phase 3' },
   { href:'users.html', t:'Users & permissions', d:'Add staff, PINs and access', perms:['USERS'] }
 ];
