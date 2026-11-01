@@ -1,0 +1,170 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=5"><title>Reservation</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Reservation</h1><button class="chip" id="user"></button></header>
+<main hidden>
+<div class="card notify" id="notify" hidden></div>
+<div class="card">
+  <h2>New reservation</h2>
+  <div class="row">
+    <div><label for="cust">Customer</label><input id="cust" list="custList" autocomplete="off" placeholder="Type or select"><datalist id="custList"></datalist></div>
+    <div><label for="date">Date</label><input id="date" type="date"></div>
+  </div>
+  <div class="row">
+    <div><label for="adv">Advance received (₹)</label><input id="adv" type="number" inputmode="decimal" min="0"></div>
+    <div><label for="notes">Notes</label><input id="notes"></div>
+  </div>
+  <div id="items"></div>
+  <button class="btn ghost" id="addItem">+ Add colour / print</button>
+  <div class="total"><span>Total to reserve</span><span id="tot">0 pcs</span></div>
+  <button class="btn" id="save">Reserve stock</button>
+</div>
+<div class="card">
+  <h2>Reservations</h2>
+  <div class="filters">
+    <select id="fSt" aria-label="Status"><option value="open">Open</option><option value="all">All (incl. closed, cancelled)</option></select>
+    <input id="fQ" type="search" placeholder="Search customer, colour or SKU" aria-label="Search reservations">
+  </div>
+  <div class="hint fc" id="fCount"></div>
+  <div id="list" class="hint">Loading…</div>
+</div>
+</main>
+<dialog id="pk"><div class="edbox"><div class="edhead"><b>Select colour / print</b><button class="x" id="pkClose" aria-label="Close">×</button></div><div id="picker" style="margin-top:10px"></div></div></dialog>
+<dialog id="ed"><div class="edbox">
+  <div class="edhead"><b id="eTitle">Edit reservation</b><button class="x" id="eClose" aria-label="Close">×</button></div>
+  <div class="sel" id="eSel" style="margin-top:10px"></div>
+  <label>Current stock</label><div id="eStk"></div>
+  <label>Reserved qty per size</label><div class="tags" id="eGrid"></div>
+  <div class="total"><span>Total</span><span id="eTot">0 pcs</span></div>
+  <div class="row">
+    <div><label for="eAdv">Advance (₹)</label><input id="eAdv" type="number" min="0"></div>
+    <div><label for="eNotes">Notes</label><input id="eNotes"></div>
+  </div>
+  <p class="err" id="eErr" role="alert"></p>
+  <button class="btn" id="eSave">Save changes</button>
+  <label for="eReason" style="margin-top:22px">Cancel reason</label><input id="eReason" placeholder="e.g. Customer changed order">
+  <button class="btn ghost" id="eCancel" style="color:var(--red);border-color:var(--red);margin-top:10px">Cancel reservation</button>
+</div></dialog>
+<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
+<script>
+let SKUS = [], ITEMS = [], RES = [], ER = null;
+$('#date').value = today();
+
+async function loadBase() {
+  const [s, c] = await Promise.all([api('skuList'), api('customers')]);
+  SKUS = s.skus;
+  $('#custList').innerHTML = c.customers.map(x => `<option value="${esc(x)}">`).join('');
+}
+/* ---------- New reservation items ---------- */
+function drawItems() {
+  $('#items').innerHTML = ITEMS.map((it, i) => {
+    const p = it.p;
+    return `<div class="item"><div class="ihead">${thumb(p.image)}<div><b>${esc(p.name)}</b><div class="hint">${esc(p.product)} ${esc(p.style)} | ${esc(p.parent)}</div></div>
+      <button class="x" data-rm="${i}" aria-label="Remove">×</button></div>
+      ${stockTable(p.sizes)}
+      <label>Qty to reserve <button class="linkbtn" data-all="${i}">Reserve all available</button></label>
+      <div class="tags">${p.sizes.map(s => `<div class="tag"><b>${esc(s.size)}</b><small>Avail ${s.avail}</small>
+        <input type="number" inputmode="numeric" min="0" max="${Math.max(0, s.avail)}" data-i="${i}" data-sku="${esc(s.sku)}" value="${it.q[s.sku] || ''}" aria-label="${esc(s.size)} qty" style="margin-top:6px"></div>`).join('')}</div></div>`;
+  }).join('');
+  sumUp();
+}
+function sumUp() { $('#tot').textContent = ITEMS.reduce((a, it) => a + Object.values(it.q).reduce((x, y) => x + (Number(y) || 0), 0), 0) + ' pcs'; }
+$('#items').oninput = e => { const t = e.target; if (t.dataset.sku) { ITEMS[t.dataset.i].q[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#items').onclick = e => {
+  const rm = e.target.closest('[data-rm]'), all = e.target.closest('[data-all]');
+  if (rm) { ITEMS.splice(Number(rm.dataset.rm), 1); drawItems(); }
+  if (all) { const it = ITEMS[Number(all.dataset.all)]; it.p.sizes.forEach(s => it.q[s.sku] = Math.max(0, s.avail)); drawItems(); }
+};
+$('#addItem').onclick = () => {
+  skuPicker($('#picker'), SKUS.filter(p => !ITEMS.some(it => it.p.parent === p.parent)), p => {
+    ITEMS.push({ p, q: {} }); $('#pk').close(); drawItems();
+  });
+  $('#pk').showModal();
+};
+$('#pkClose').onclick = () => $('#pk').close();
+$('#save').onclick = async () => {
+  const items = ITEMS.map(it => ({ parent: it.p.parent, lines: Object.keys(it.q).map(k => ({ sku: k, qty: it.q[k] })).filter(l => l.qty > 0) })).filter(it => it.lines.length);
+  if (!$('#cust').value.trim()) return toast('Enter customer name', 1);
+  if (!items.length) return toast('Add a colour and enter qty', 1);
+  const b = $('#save'); b.disabled = true; b.textContent = 'Saving…';
+  try {
+    const r = await api('reserve', { customer: $('#cust').value.trim(), date: $('#date').value, advance: $('#adv').value, notes: $('#notes').value, items });
+    toast('Reserved ' + r.count + ' colour' + (r.count > 1 ? 's' : '') + ' for ' + $('#cust').value.trim());
+    ITEMS = []; ['cust','adv','notes'].forEach(id => $('#' + id).value = ''); drawItems();
+    await loadBase(); loadList();
+  } catch (e) { toast(e.message, 1); }
+  b.disabled = false; b.textContent = 'Reserve stock';
+};
+
+/* ---------- List ---------- */
+async function loadList() {
+  try { RES = (await api('reservations', { open: $('#fSt').value === 'open' })).rows; drawList(); }
+  catch (e) { $('#list').textContent = e.message; }
+}
+function drawList() {
+  const q = $('#fQ').value.trim().toLowerCase(), edit = can('RESERVE');
+  const f = RES.filter(r => !q || [r.customer, r.name, r.parent, r.style].join(' ').toLowerCase().includes(q));
+  $('#fCount').textContent = 'Showing ' + f.length + ' reservations';
+  $('#list').innerHTML = f.length ? f.map(r => `<div class="rec" style="display:flex;gap:12px;align-items:flex-start">${thumb(r.image)}
+    <div style="flex:1"><b>${esc(r.customer)}</b> | ${esc(r.name)} <span class="mini">${esc(r.style)}</span><div>${statusBadge(r)}</div>
+    <div class="mini">${r.lines.map(l => esc(l.size) + ': ' + l.qty + (l.bal !== l.qty && r.status !== 'Cancelled' ? ' (bal ' + Math.max(0, l.bal) + ')' : '')).join(', ')}</div>
+    <div class="mini">Total ${r.total} pcs${r.bal && r.bal !== r.total ? ', balance ' + r.bal : ''} | ${esc(r.date)} | ${esc(r.by)}${r.advance ? ' | Adv ₹' + esc(r.advance) : ''}${r.invoices ? ' | Inv ' + esc(r.invoices) : ''}${r.notes ? ' | ' + esc(r.notes) : ''}</div></div>
+    ${edit && ['Open','Part dispatched'].includes(r.status) ? `<button class="ebtn" data-id="${esc(r.id)}">Edit</button>` : ''}</div>`).join('')
+    : 'No reservations.';
+}
+$('#fSt').onchange = loadList;
+$('#fQ').oninput = drawList;
+$('#list').onclick = e => { const b = e.target.closest('.ebtn'); if (b) openRes(b.dataset.id); };
+
+/* ---------- Edit / cancel ---------- */
+function openRes(id) {
+  ER = RES.find(r => r.id === id); if (!ER) return;
+  const p = SKUS.find(x => x.parent === ER.parent);
+  const sizes = p ? p.sizes : ER.lines.map(l => ({ sku: l.sku, size: l.size, avail: 0 }));
+  $('#eTitle').textContent = 'Edit reservation: ' + ER.customer;
+  $('#eSel').innerHTML = `${thumb(ER.image)}<div><b>${esc(ER.name)}</b><div class="hint">${esc(ER.parent)} | ${esc(ER.id)}</div></div>`;
+  $('#eStk').innerHTML = p ? stockTable(p.sizes) : '';
+  $('#eGrid').innerHTML = sizes.map(s => { const l = ER.lines.find(x => x.sku === s.sku) || { qty: 0, disp: 0, rel: 0 };
+    return `<div class="tag"><b>${esc(s.size)}</b><small>Avail +${Math.max(0, s.avail)}${l.disp ? ' | Disp ' + l.disp : ''}</small>
+      <input type="number" inputmode="numeric" min="${l.disp + l.rel}" data-sku="${esc(s.sku)}" value="${l.qty || ''}" aria-label="${esc(s.size)} qty" style="margin-top:6px"></div>`; }).join('');
+  $('#eAdv').value = ER.advance || ''; $('#eNotes').value = ER.notes || ''; $('#eReason').value = ''; $('#eErr').textContent = '';
+  eSum(); $('#ed').showModal();
+}
+const eLines = () => [...document.querySelectorAll('#eGrid input')].map(i => ({ sku: i.dataset.sku, qty: Math.round(Number(i.value) || 0) }));
+function eSum() { $('#eTot').textContent = eLines().reduce((a, l) => a + l.qty, 0) + ' pcs'; }
+$('#eGrid').oninput = eSum;
+$('#eClose').onclick = () => $('#ed').close();
+$('#eSave').onclick = async () => {
+  $('#eErr').textContent = '';
+  const b = $('#eSave'); b.disabled = true; b.textContent = 'Saving…';
+  try {
+    await api('editReservation', { id: ER.id, lines: eLines(), advance: $('#eAdv').value, notes: $('#eNotes').value });
+    $('#ed').close(); toast('Reservation updated'); await loadBase(); loadList();
+  } catch (e) { $('#eErr').textContent = e.message; }
+  b.disabled = false; b.textContent = 'Save changes';
+};
+$('#eCancel').onclick = async () => {
+  $('#eErr').textContent = '';
+  const reason = $('#eReason').value.trim();
+  if (!reason) { $('#eErr').textContent = 'Enter a cancel reason'; $('#eReason').focus(); return; }
+  if (!confirm('Cancel this reservation for ' + ER.customer + '? Balance qty will be released to available stock.')) return;
+  const b = $('#eCancel'); b.disabled = true;
+  try {
+    const r = await api('cancelReservation', { id: ER.id, reason });
+    $('#ed').close(); toast('Reservation cancelled, ' + r.released + ' pcs released');
+    $('#notify').innerHTML = '<b>Inform admin on WhatsApp</b><div class="hint">Tap to send the cancel details.</div>' +
+      (r.admins.length ? r.admins.map(a => `<a class="wa" target="_blank" rel="noopener" href="${waLink(a.phone, r.msg)}">Send to ${esc(a.name)}</a>`).join('')
+        : '<p class="hint">No admin WhatsApp number saved. Add it in Users & permissions.</p>') +
+      ' <button class="linkbtn" onclick="this.parentNode.hidden=true">Close</button>';
+    $('#notify').hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' });
+    await loadBase(); loadList();
+  } catch (e) { $('#eErr').textContent = e.message; }
+  b.disabled = false;
+};
+
+gate(['RESERVE'], async () => {
+  try { await loadBase(); } catch (e) { toast(e.message, 1); }
+  drawItems(); loadList();
+});
+</script></body></html>
