@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=5"><title>Dispatch</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Dispatch</h1><button class="chip" id="user"></button></header>
+<main hidden>
+<div class="card">
+  <h2>New dispatch</h2>
+  <div class="row">
+    <div><label for="cust">Customer</label><input id="cust" list="custList" autocomplete="off" placeholder="Type or select"><datalist id="custList"></datalist></div>
+    <div><label for="date">Date</label><input id="date" type="date"></div>
+  </div>
+  <div class="row">
+    <div><label for="inv">Invoice no</label><input id="inv"></div>
+    <div><label for="pdf">Invoice PDF</label><input id="pdf" type="file" accept="application/pdf"></div>
+  </div>
+  <label for="notes">Notes</label><input id="notes" placeholder="Transport, LR no, etc.">
+</div>
+<div class="card" id="resCard" hidden><h2>Open reservations of this customer</h2><div id="resItems"></div></div>
+<div class="card">
+  <h2>Ready stock (not reserved)</h2>
+  <div id="items"><p class="hint">For B2B outward without reservation. Add each colour from the invoice and enter size-wise qty.</p></div>
+  <button class="btn ghost" id="addItem">+ Add colour / print</button>
+</div>
+<div class="card">
+  <div class="total" style="margin-top:0;border:0;padding:0"><span>Total dispatch</span><span id="tot">0 pcs</span></div>
+  <button class="btn" id="save">Save dispatch</button>
+</div>
+<div class="card"><h2>Recent dispatches</h2><div id="list" class="hint">Loading…</div></div>
+</main>
+<dialog id="pk"><div class="edbox"><div class="edhead"><b>Select colour / print</b><button class="x" id="pkClose" aria-label="Close">×</button></div><div id="picker" style="margin-top:10px"></div></div></dialog>
+<dialog id="ed"><div class="edbox">
+  <div class="edhead"><b id="eTitle">Edit dispatch</b><button class="x" id="eClose" aria-label="Close">×</button></div>
+  <div class="row">
+    <div><label for="eInv">Invoice no</label><input id="eInv"></div>
+    <div><label for="eDate">Date</label><input id="eDate" type="date"></div>
+  </div>
+  <label for="ePdf">Replace invoice PDF <span class="hint">(optional)</span></label><input id="ePdf" type="file" accept="application/pdf">
+  <label for="eNotes">Notes</label><input id="eNotes">
+  <div id="eItems"></div>
+  <div class="total"><span>Total</span><span id="eTot">0 pcs</span></div>
+  <p class="err" id="eErr" role="alert"></p>
+  <button class="btn" id="eSave">Save changes</button>
+  <button class="btn ghost" id="eDel" style="color:var(--red);border-color:var(--red);margin-top:10px">Delete dispatch (stock goes back)</button>
+</div></dialog>
+<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
+<script>
+let SKUS = [], RITEMS = [], DITEMS = [], PDF = null;
+$('#date').value = today();
+
+async function loadBase() {
+  const [s, c] = await Promise.all([api('skuList'), api('customers')]);
+  SKUS = s.skus;
+  $('#custList').innerHTML = c.customers.map(x => `<option value="${esc(x)}">`).join('');
+}
+const tagInput = (attrs, val) => `<input type="number" inputmode="numeric" min="0" ${attrs} value="${val || ''}" style="margin-top:6px">`;
+
+/* ---------- reservation blocks ---------- */
+async function loadCustRes() {
+  const c = $('#cust').value.trim();
+  RITEMS = [];
+  if (c) {
+    try { RITEMS = (await api('reservations', { open: true, customer: c })).rows.map(r => ({ r, q: {}, close: false })); }
+    catch (e) { toast(e.message, 1); }
+  }
+  drawRes();
+}
+function drawRes() {
+  $('#resCard').hidden = !RITEMS.length;
+  $('#resItems').innerHTML = RITEMS.map((it, i) => { const r = it.r;
+    return `<div class="item resv"><div class="ihead">${thumb(r.image)}<div><b>${esc(r.name)}</b> ${statusBadge(r)}
+      <div class="hint">${esc(r.parent)} | ${esc(r.id)} | ${esc(r.date)}</div></div></div>
+      <label>Dispatch qty <button class="linkbtn" data-fill="${i}">Fill reserved qty</button></label>
+      <div class="tags">${r.lines.filter(l => l.bal > 0).map(l => `<div class="tag"><b>${esc(l.size)}</b><small>Bal ${l.bal} | Ready ${l.ready}</small>
+        ${tagInput(`max="${Math.min(l.bal, l.ready)}" data-r="${i}" data-sku="${esc(l.sku)}" aria-label="${esc(l.size)} qty"`, it.q[l.sku])}</div>`).join('')}</div>
+      <label class="pl" style="border:0"><input type="checkbox" data-close="${i}" ${it.close ? 'checked' : ''}> Close this reservation after dispatch (release balance qty)</label></div>`;
+  }).join('');
+  sumUp();
+}
+$('#resItems').oninput = e => { const t = e.target; if (t.dataset.sku) { RITEMS[t.dataset.r].q[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#resItems').onchange = e => { const t = e.target; if (t.dataset.close !== undefined) RITEMS[t.dataset.close].close = t.checked; };
+$('#resItems').onclick = e => {
+  const f = e.target.closest('[data-fill]'); if (!f) return;
+  const it = RITEMS[Number(f.dataset.fill)];
+  it.r.lines.forEach(l => { if (l.bal > 0) it.q[l.sku] = Math.max(0, Math.min(l.bal, l.ready)); });
+  drawRes();
+};
+
+/* ---------- direct (not reserved) blocks ---------- */
+function drawItems() {
+  $('#items').innerHTML = DITEMS.length ? DITEMS.map((it, i) => { const p = it.p;
+    return `<div class="item"><div class="ihead">${thumb(p.image)}<div><b>${esc(p.name)}</b><div class="hint">${esc(p.product)} ${esc(p.style)} | ${esc(p.parent)}</div></div>
+      <button class="x" data-rm="${i}" aria-label="Remove">×</button></div>
+      ${stockTable(p.sizes)}
+      <label>Dispatch qty</label>
+      <div class="tags">${p.sizes.map(s => { const free = Math.max(0, Math.min(s.ready, s.avail));
+        return `<div class="tag"><b>${esc(s.size)}</b><small>Free ${free}</small>${tagInput(`max="${free}" data-i="${i}" data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"`, it.q[s.sku])}</div>`; }).join('')}</div></div>`;
+  }).join('') : '<p class="hint">For B2B outward without reservation. Add each colour from the invoice and enter size-wise qty.</p>';
+  sumUp();
+}
+$('#items').oninput = e => { const t = e.target; if (t.dataset.sku) { DITEMS[t.dataset.i].q[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#items').onclick = e => { const rm = e.target.closest('[data-rm]'); if (rm) { DITEMS.splice(Number(rm.dataset.rm), 1); drawItems(); } };
+function openPicker() {
+  skuPicker($('#picker'), SKUS.filter(p => !DITEMS.some(it => it.p.parent === p.parent)), p => {
+    DITEMS.push({ p, q: {} }); $('#pk').close(); drawItems();
+    setTimeout(() => { const b = $('#items').lastElementChild; if (b) b.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+  });
+  $('#pk').showModal();
+}
+$('#addItem').onclick = openPicker;
+$('#pkClose').onclick = () => $('#pk').close();
+
+const qsum = q => Object.values(q).reduce((a, b) => a + (Number(b) || 0), 0);
+function sumUp() { $('#tot').textContent = RITEMS.concat(DITEMS).reduce((a, it) => a + qsum(it.q), 0) + ' pcs'; }
+
+/* ---------- header events ---------- */
+$('#cust').onchange = loadCustRes;
+$('#pdf').onchange = async e => {
+  const f = e.target.files[0]; PDF = null; if (!f) return;
+  if (f.size > 10 * 1024 * 1024) { e.target.value = ''; return toast('PDF is too big (max 10 MB)', 1); }
+  try { PDF = await fileToB64(f); } catch (err) { return toast(err.message, 1); }
+  if (!$('#inv').value) $('#inv').value = f.name.replace(/\.pdf$/i, '');
+  // PDF has no size details: open the size form straight away
+  if (!RITEMS.length && !DITEMS.length) openPicker();
+};
+
+$('#save').onclick = async () => {
+  const lines = q => Object.keys(q).map(k => ({ sku: k, qty: q[k] })).filter(l => l.qty > 0);
+  const items = RITEMS.map(it => ({ resId: it.r.id, close: it.close, lines: lines(it.q) })).filter(it => it.lines.length || it.close)
+    .concat(DITEMS.map(it => ({ parent: it.p.parent, lines: lines(it.q) })).filter(it => it.lines.length));
+  if (!$('#cust').value.trim()) return toast('Enter customer name', 1);
+  if (!$('#inv').value.trim()) return toast('Enter invoice number', 1);
+  if (!items.length) return toast('Enter dispatch qty for at least one size', 1);
+  const b = $('#save'); b.disabled = true; b.textContent = PDF ? 'Uploading invoice…' : 'Saving…';
+  try {
+    const r = await api('dispatch', { customer: $('#cust').value.trim(), date: $('#date').value, invoiceNo: $('#inv').value.trim(),
+      notes: $('#notes').value, pdf: PDF, items });
+    toast('Dispatched ' + r.total + ' pcs');
+    RITEMS = []; DITEMS = []; PDF = null;
+    ['cust','inv','notes','pdf'].forEach(id => $('#' + id).value = '');
+    drawRes(); drawItems(); await loadBase(); loadList();
+  } catch (e) { toast(e.message, 1); }
+  b.disabled = false; b.textContent = 'Save dispatch';
+};
+
+let DL = [], ED = null, EPDF = null;
+async function loadList() {
+  try {
+    DL = (await api('dispatches')).rows;
+    const ed = can('ENTRY_EDIT');
+    $('#list').innerHTML = DL.length ? DL.map((x, i) => `<div class="rec" style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1">
+      <b>${esc(x.customer)}</b> | Inv ${esc(x.invoice)} <span class="b-ready">${x.total} pcs</span>
+      ${x.pdf ? `<a class="linkbtn" href="${esc(x.pdf)}" target="_blank" rel="noopener">View PDF</a>` : ''}
+      <div class="mini">${x.items.map(i => esc(i.name) + ' (' + esc(i.parts.join(', ')) + ')').join('; ')}</div>
+      <div class="mini">${esc(x.date)} | ${esc(x.by)} | ${x.mode === 'DIRECT' ? 'Ready stock' : x.mode === 'MIXED' ? 'Reserved + ready stock' : 'Against reservation'}${x.notes ? ' | ' + esc(x.notes) : ''}</div></div>
+      ${ed ? `<button class="ebtn" data-i="${i}">Edit</button>` : ''}</div>`).join('')
+      : 'No dispatches yet.';
+  } catch (e) { $('#list').textContent = e.message; }
+}
+function openDisp(i) {
+  ED = DL[i]; if (!ED) return; EPDF = null;
+  $('#eTitle').textContent = 'Edit dispatch: ' + ED.customer;
+  $('#eInv').value = ED.invoice; $('#eDate').value = ED.date; $('#eNotes').value = ED.notes || ''; $('#ePdf').value = ''; $('#eErr').textContent = '';
+  const groups = {};
+  ED.lines.forEach((l, j) => { const k = l.parent + '|' + l.resId; (groups[k] = groups[k] || { l, rows: [] }).rows.push(Object.assign({ j }, l)); });
+  $('#eItems').innerHTML = Object.values(groups).map(g => `<div class="item ${g.l.resId ? 'resv' : ''}"><div class="ihead">${thumb(g.l.image)}
+    <div><b>${esc(g.l.name)}</b><div class="hint">${esc(g.l.parent)} | ${g.l.resId ? 'Reservation ' + esc(g.l.resId) : 'Ready stock'}</div></div></div>
+    <div class="tags">${g.rows.map(l => `<div class="tag"><b>${esc(l.size)}</b><input type="number" inputmode="numeric" min="0" data-j="${l.j}"
+      value="${l.qty}" aria-label="${esc(l.size)} qty" style="margin-top:6px"></div>`).join('')}</div></div>`).join('');
+  eSum(); $('#ed').showModal();
+}
+const eLines = () => [...document.querySelectorAll('#eItems input')].map(i => { const l = ED.lines[Number(i.dataset.j)];
+  return { sku: l.sku, resId: l.resId, qty: Math.round(Number(i.value) || 0) }; });
+function eSum() { $('#eTot').textContent = eLines().reduce((a, l) => a + l.qty, 0) + ' pcs'; }
+$('#eItems').oninput = eSum;
+$('#eClose').onclick = () => $('#ed').close();
+$('#ePdf').onchange = async e => { const f = e.target.files[0]; EPDF = null; if (!f) return;
+  if (f.size > 10 * 1024 * 1024) { e.target.value = ''; $('#eErr').textContent = 'PDF is too big (max 10 MB)'; return; }
+  EPDF = await fileToB64(f); };
+async function saveDisp(del) {
+  $('#eErr').textContent = '';
+  if (del && !confirm('Delete dispatch Inv ' + ED.invoice + ' (' + ED.total + ' pcs)? Stock goes back to Ready and reservations reopen.')) return;
+  const b = del ? $('#eDel') : $('#eSave'), t = b.textContent; b.disabled = true; b.textContent = 'Saving…';
+  try {
+    await api('editDispatch', { id: ED.id, del, invoiceNo: $('#eInv').value.trim(), date: $('#eDate').value, notes: $('#eNotes').value, pdf: EPDF, lines: eLines() });
+    $('#ed').close(); toast(del ? 'Dispatch deleted' : 'Dispatch updated');
+    await loadBase(); loadList(); if ($('#cust').value.trim()) loadCustRes();
+  } catch (e) { $('#eErr').textContent = e.message; }
+  b.disabled = false; b.textContent = t;
+}
+$('#eSave').onclick = () => saveDisp(false);
+$('#eDel').onclick = () => saveDisp(true);
+$('#list').onclick = e => { const b = e.target.closest('.ebtn'); if (b) openDisp(Number(b.dataset.i)); };
+
+gate(['DISPATCH'], async () => {
+  try { await loadBase(); } catch (e) { toast(e.message, 1); }
+  drawItems(); loadList();
+});
+</script></body></html>
