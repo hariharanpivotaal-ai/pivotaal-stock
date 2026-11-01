@@ -1,13 +1,13 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=4"><title>Stock entry</title></head><body>
+<link rel="stylesheet" href="style.css?v=5"><title>Stock entry</title></head><body>
 <header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1 id="title">Production entry</h1><button class="chip" id="user"></button></header>
 <main hidden>
 <div class="card"><h2>Select SKU</h2><div id="picker"></div></div>
 <div class="card" id="form" hidden>
   <div class="sel" id="sel"></div>
-  <label>Current stock</label><div class="stk" id="stk"></div>
+  <label>Current stock</label><div id="stk"></div>
   <div id="srcBox" hidden>
     <label>Stock coming from</label>
     <div class="seg" id="src"><button data-v="PROD" class="on">Production</button><button data-v="DIRECT">Direct ready stock</button></div>
@@ -41,7 +41,7 @@
   <button class="btn" id="eSave">Save changes</button>
   <button class="btn ghost" id="eDel" style="color:var(--red);border-color:var(--red);margin-top:10px">Delete entry</button>
 </div></dialog>
-<script src="config.js?v=3"></script><script src="app.js?v=3"></script>
+<script src="config.js?v=5"></script><script src="app.js?v=5"></script>
 <script>
 const MODE = new URLSearchParams(location.search).get('m') === 'ready' ? 'ready' : 'prod';
 const T = MODE === 'ready'
@@ -70,12 +70,7 @@ function drawGrid() {
   const fromProd = MODE === 'ready' && SRC === 'PROD';
   $('#grid').innerHTML = CUR.sizes.map(s => `<div class="tag"><b>${esc(s.size)}</b>
     <input type="number" inputmode="numeric" min="0" style="margin-top:6px" ${fromProd ? 'max="' + s.inProd + '"' : ''} data-sku="${esc(s.sku)}" aria-label="${esc(s.size)} qty"></div>`).join('');
-  const S = CUR.sizes, sum = k => S.reduce((a, s) => a + s[k], 0);
-  const row = (lbl, cls, k) => `<tr><th><span class="${cls}">${lbl}</span></th>${S.map(s => `<td>${s[k]}</td>`).join('')}<td class="tt">${sum(k)}</td></tr>`;
-  $('#stk').innerHTML = `<table><thead><tr><th></th>${S.map(s => `<th>${esc(s.size)}</th>`).join('')}<th class="tt">Total</th></tr></thead><tbody>
-    ${row('In production', 'b-prod', 'inProd')}${row('Ready', 'b-ready', 'ready')}
-    <tr class="sumrow"><th>Total stock</th>${S.map(s => `<td>${s.inProd + s.ready}</td>`).join('')}<td class="tt">${sum('inProd') + sum('ready')}</td></tr>
-    </tbody></table>`;
+  $('#stk').innerHTML = stockTable(CUR.sizes);
   $('#qtyLbl').textContent = MODE === 'ready' ? (fromProd ? 'Size-wise packed qty (moves from In production)' : 'Size-wise qty to add to Ready') : 'Size-wise qty to add to production';
   $('#closeBox').hidden = !fromProd;
   $('#srcHint').textContent = MODE !== 'ready' ? ''
