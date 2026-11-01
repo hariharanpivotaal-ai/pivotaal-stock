@@ -159,3 +159,18 @@ function statusBadge(r) {
   const s = STAGE[r.stage] || STAGE.PROD;
   return `<span class="${s[1]}">${s[0]}</span>${r.status === 'Part dispatched' ? ' <span class="b-avail">Part dispatched</span>' : ''}`;
 }
+
+// Red mark on a size box when qty is more than allowed (input max)
+function markTag(inp) {
+  if (!inp || inp.max === '') return;
+  const max = Number(inp.max), q = Number(inp.value) || 0, tag = inp.closest('.tag');
+  let w = tag.querySelector('.warn');
+  if (!w) { w = document.createElement('div'); w.className = 'warn'; tag.appendChild(w); }
+  const over = q > max;
+  tag.classList.toggle('over', over);
+  w.textContent = !over ? '' : max <= 0 ? (inp.dataset.none || 'No stock') : 'Only ' + max + ' ' + (inp.dataset.word || 'available');
+}
+function overCheck(box) {
+  box.querySelectorAll('.tag input').forEach(markTag);
+  return !box.querySelector('.tag.over');
+}
