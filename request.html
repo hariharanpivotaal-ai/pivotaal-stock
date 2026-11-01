@@ -1,0 +1,203 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=7"><title>Stock request</title></head><body>
+<header class="top"><a class="back" href="index.html" aria-label="Back to home">‹</a><h1>Stock request</h1><button class="chip" id="user"></button></header>
+<main hidden>
+<div class="card notify" id="notify" hidden></div>
+<div class="card" id="newCard">
+  <h2>New request</h2>
+  <p class="hint" style="margin-top:-4px">When a customer asks for stock we don't have, request production or purchase from a vendor.</p>
+  <div class="row">
+    <div><label for="cust">Customer</label><input id="cust" list="custList" autocomplete="off" placeholder="Who is asking"><datalist id="custList"></datalist></div>
+    <div><label for="need">Need by</label><input id="need" type="date"></div>
+  </div>
+  <label>Item</label>
+  <div class="seg" id="typeSeg"><button data-v="EXISTING" class="on">Existing SKU</button><button data-v="NEW">New item</button></div>
+  <div id="exBox">
+    <div id="exItem"></div>
+    <button class="btn ghost" id="pickBtn">Select colour / print</button>
+  </div>
+  <div id="newBox" hidden>
+    <div class="row">
+      <div><label for="nProd">Product</label><select id="nProd"></select></div>
+      <div><label for="nStyle">Style</label><select id="nStyle"></select></div>
+    </div>
+    <label for="nName">Item name (colour / print)</label><input id="nName" placeholder="e.g. Peach floral print">
+    <label for="nDesc">Description</label><input id="nDesc" placeholder="Fabric, GSM, print details, etc.">
+    <label for="nPhoto">Reference photo</label><input id="nPhoto" type="file" accept="image/*"><img id="nPrev" class="prev" hidden alt="Photo preview">
+    <label>Required qty</label><div class="tags" id="nGrid"></div>
+  </div>
+  <div class="row">
+    <div><label>Priority</label><div class="seg" id="prSeg"><button data-v="Normal" class="on">Normal</button><button data-v="Urgent">Urgent</button></div></div>
+    <div><label for="notes">Notes</label><input id="notes"></div>
+  </div>
+  <div class="total"><span>Total required</span><span id="tot">0 pcs</span></div>
+  <button class="btn" id="save">Send request</button>
+</div>
+<div class="card">
+  <h2>Requests</h2>
+  <div class="filters">
+    <select id="fSt" aria-label="Status"><option value="open">Open</option><option value="Pending">Pending decision</option><option value="mine">My requests</option><option value="all">All</option></select>
+    <input id="fQ" type="search" placeholder="Search customer or item" aria-label="Search requests">
+  </div>
+  <div class="hint fc" id="fCount"></div>
+  <div id="list" class="hint">Loading…</div>
+</div>
+</main>
+<dialog id="pk"><div class="edbox"><div class="edhead"><b>Select colour / print</b><button class="x" id="pkClose" aria-label="Close">×</button></div><div id="picker" style="margin-top:10px"></div></div></dialog>
+<dialog id="md"><div class="edbox">
+  <div class="edhead"><b id="mTitle">Update request</b><button class="x" id="mClose" aria-label="Close">×</button></div>
+  <div class="sel" id="mSel" style="margin-top:10px"></div>
+  <div class="mini" id="mInfo"></div>
+  <label for="mSt">Decision / status</label>
+  <select id="mSt">
+    <option value="Pending">Pending</option>
+    <option value="In production">Produce in-house</option>
+    <option value="Purchase ordered">Buy from vendor</option>
+    <option value="Completed">Completed (stock received)</option>
+    <option value="Rejected">Rejected</option>
+  </select>
+  <div id="mVendBox"><label for="mVend">Vendor name</label><input id="mVend"></div>
+  <label for="mExp">Expected date</label><input id="mExp" type="date">
+  <label for="mRem">Remarks</label><input id="mRem">
+  <p class="err" id="mErr" role="alert"></p>
+  <button class="btn" id="mSave">Save and notify</button>
+</div></dialog>
+<script src="config.js?v=7"></script><script src="app.js?v=7"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+let M, SKUS = [], TYPE = 'EXISTING', PR = 'Normal', EX = null, EXQ = {}, NQ = {}, NIMG = null, RQ = [], MR = null;
+$('#need').value = '';
+const ST = { 'Pending': 'b-res', 'In production': 'b-prod', 'Purchase ordered': 'b-avail', 'Completed': 'b-ready', 'Rejected': 'b-short', 'Cancelled': 'b-off' };
+const OPEN = ['Pending', 'In production', 'Purchase ordered'];
+function seg(id, v) { [...$(id).children].forEach(x => x.classList.toggle('on', x.dataset.v === v)); }
+
+function showNotify(title, r) {
+  $('#notify').innerHTML = `<b>${esc(title)}</b><div class="hint">Tap to send on WhatsApp.</div>` +
+    (r.to.length ? r.to.map(a => `<a class="wa" target="_blank" rel="noopener" href="${waLink(a.phone, r.msg)}">Send to ${esc(a.name)}</a>`).join('')
+      : '<p class="hint">No WhatsApp number saved for them. Add it in Users & permissions.</p>') +
+    ' <button class="linkbtn" onclick="this.parentNode.hidden=true">Close</button>';
+  $('#notify').hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---------- new request ---------- */
+function drawEx() {
+  if (!EX) { $('#exItem').innerHTML = ''; $('#pickBtn').textContent = 'Select colour / print'; return sumUp(); }
+  $('#pickBtn').textContent = 'Change colour / print';
+  $('#exItem').innerHTML = `<div class="item"><div class="ihead">${thumb(EX.image)}<div><b>${esc(EX.name)}</b>
+    <div class="hint">${esc(EX.product)} ${esc(EX.style)} | ${esc(EX.parent)}</div></div></div>
+    ${stockTable(EX.sizes)}<label>Required qty</label>
+    <div class="tags">${EX.sizes.map(s => `<div class="tag"><b>${esc(s.size)}</b><small>Avail ${Math.max(0, s.avail)}</small>
+      <input type="number" inputmode="numeric" min="0" data-sku="${esc(s.sku)}" value="${EXQ[s.sku] || ''}" aria-label="${esc(s.size)} qty" style="margin-top:6px"></div>`).join('')}</div></div>`;
+  sumUp();
+}
+function drawNewSizes() {
+  const g = (M.products.find(x => x.name === $('#nProd').value) || {}).group;
+  NQ = {};
+  $('#nGrid').innerHTML = M.sizes.filter(s => s.group === g).map(s => `<div class="tag"><b>${esc(s.name)}</b>
+    <input type="number" inputmode="numeric" min="0" data-size="${esc(s.code)}" aria-label="${esc(s.name)} qty" style="margin-top:6px"></div>`).join('');
+  sumUp();
+}
+function sumUp() { const q = TYPE === 'NEW' ? NQ : EXQ; $('#tot').textContent = Object.values(q).reduce((a, b) => a + (b || 0), 0) + ' pcs'; }
+$('#exItem').oninput = e => { const t = e.target; if (t.dataset.sku) { EXQ[t.dataset.sku] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#nGrid').oninput = e => { const t = e.target; if (t.dataset.size) { NQ[t.dataset.size] = Math.round(Number(t.value) || 0); sumUp(); } };
+$('#nProd').onchange = drawNewSizes;
+$('#typeSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; TYPE = b.dataset.v; seg('#typeSeg', TYPE);
+  $('#exBox').hidden = TYPE !== 'EXISTING'; $('#newBox').hidden = TYPE !== 'NEW'; sumUp(); };
+$('#prSeg').onclick = e => { const b = e.target.closest('button'); if (b) { PR = b.dataset.v; seg('#prSeg', PR); } };
+$('#pickBtn').onclick = () => { skuPicker($('#picker'), SKUS, p => { EX = p; EXQ = {}; $('#pk').close(); drawEx(); }); $('#pk').showModal(); };
+$('#pkClose').onclick = () => $('#pk').close();
+$('#nPhoto').onchange = async e => { const f = e.target.files[0]; if (!f) return;
+  try { NIMG = await resizeImage(f); $('#nPrev').src = NIMG.url; $('#nPrev').hidden = false; } catch (err) { toast(err.message, 1); } };
+
+$('#save').onclick = async () => {
+  const d = { customer: $('#cust').value.trim(), needBy: $('#need').value, priority: PR, notes: $('#notes').value, type: TYPE };
+  if (TYPE === 'EXISTING') {
+    if (!EX) return toast('Select colour / print', 1);
+    Object.assign(d, { parent: EX.parent, lines: Object.keys(EXQ).map(k => ({ sku: k, qty: EXQ[k] })) });
+  } else {
+    if (!$('#nName').value.trim()) return toast('Enter item name', 1);
+    Object.assign(d, { product: $('#nProd').value, style: $('#nStyle').value, itemName: $('#nName').value.trim(), description: $('#nDesc').value,
+      image: NIMG && NIMG.b64, mime: NIMG && NIMG.mime, lines: Object.keys(NQ).map(k => ({ size: k, qty: NQ[k] })) });
+  }
+  if (!d.lines.some(l => l.qty > 0)) return toast('Enter required qty', 1);
+  const b = $('#save'); b.disabled = true; b.textContent = 'Sending…';
+  try {
+    const r = await api('reqCreate', d);
+    showNotify('Request ' + r.id + ' saved. Inform production / purchase:', r);
+    EX = null; EXQ = {}; NIMG = null; ['cust','need','notes','nName','nDesc','nPhoto'].forEach(id => $('#' + id).value = ''); $('#nPrev').hidden = true;
+    drawEx(); drawNewSizes(); loadList();
+  } catch (e) { toast(e.message, 1); }
+  b.disabled = false; b.textContent = 'Send request';
+};
+
+/* ---------- list ---------- */
+async function loadList() {
+  try { RQ = (await api('reqList')).rows; drawList(); } catch (e) { $('#list').textContent = e.message; }
+}
+function drawList() {
+  const f0 = $('#fSt').value, q = $('#fQ').value.trim().toLowerCase(), me_ = me().name, mgr = can('REQ_MANAGE');
+  const f = RQ.filter(r => (f0 === 'all' || (f0 === 'open' && OPEN.includes(r.status)) || (f0 === 'mine' && r.by === me_) || r.status === f0)
+    && (!q || [r.customer, r.name, r.parent, r.style, r.vendor].join(' ').toLowerCase().includes(q)));
+  $('#fCount').textContent = 'Showing ' + f.length + ' requests';
+  $('#list').innerHTML = f.length ? f.map(r => `<div class="rec" style="display:flex;gap:12px;align-items:flex-start">${thumb(r.image)}
+    <div style="flex:1"><b>${esc(r.name)}</b> <span class="mini">${esc(r.style)}${r.type === 'NEW' ? ' | NEW item' : ''}</span>
+    <div><span class="${ST[r.status] || 'b-off'}">${esc(r.status === 'In production' ? 'Producing in-house' : r.status === 'Purchase ordered' ? 'Buying from ' + r.vendor : r.status)}</span>
+      ${r.priority === 'Urgent' ? '<span class="b-short">Urgent</span>' : ''} ${r.overdue ? '<span class="b-short">Overdue</span>' : ''}</div>
+    <div class="mini">${r.lines.map(l => esc(l.size) + ': ' + l.qty).join(', ')} | Total ${r.total} pcs</div>
+    <div class="mini">${r.customer ? esc(r.customer) + ' | ' : ''}${esc(r.date)} by ${esc(r.by)}${r.needBy ? ' | Need by ' + esc(r.needBy) : ''}${r.expected ? ' | Expected ' + esc(r.expected) : ''}</div>
+    ${r.description || r.notes || r.remarks ? `<div class="mini">${[r.description, r.notes, r.remarks && 'Remarks: ' + r.remarks].filter(Boolean).map(esc).join(' | ')}</div>` : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${mgr && OPEN.includes(r.status) ? `<button class="ebtn" data-m="${esc(r.id)}">Update</button>` : ''}
+      ${!mgr && r.by === me_ && r.status === 'Pending' ? `<button class="ebtn" data-c="${esc(r.id)}" style="color:var(--red);border-color:var(--red)">Cancel</button>` : ''}
+    </div></div>`).join('') : 'No requests.';
+}
+$('#fSt').onchange = drawList; $('#fQ').oninput = drawList;
+$('#list').onclick = async e => {
+  const m = e.target.closest('[data-m]'), c = e.target.closest('[data-c]');
+  if (m) openManage(m.dataset.m);
+  if (c && confirm('Cancel this request?')) {
+    try { const r = await api('reqUpdate', { id: c.dataset.c, status: 'Cancelled' }); showNotify('Request cancelled. Inform them:', r); loadList(); }
+    catch (err) { toast(err.message, 1); }
+  }
+};
+
+/* ---------- manage (produce / buy) ---------- */
+function openManage(id) {
+  MR = RQ.find(r => r.id === id); if (!MR) return;
+  $('#mTitle').textContent = 'Update ' + MR.id;
+  $('#mSel').innerHTML = `${thumb(MR.image)}<div><b>${esc(MR.name)}</b><div class="hint">${esc(MR.style)} ${MR.parent ? '| ' + esc(MR.parent) : '| NEW item'}</div></div>`;
+  $('#mInfo').innerHTML = `${MR.lines.map(l => esc(l.size) + ': ' + l.qty).join(', ')} | Total ${MR.total} pcs<br>${esc(MR.customer || '')} ${MR.needBy ? '| Need by ' + esc(MR.needBy) : ''} | by ${esc(MR.by)}`;
+  $('#mSt').value = MR.status; $('#mVend').value = MR.vendor || ''; $('#mExp').value = MR.expected || ''; $('#mRem').value = MR.remarks || ''; $('#mErr').textContent = '';
+  vendBox(); $('#md').showModal();
+}
+function vendBox() { $('#mVendBox').hidden = $('#mSt').value !== 'Purchase ordered'; }
+$('#mSt').onchange = vendBox;
+$('#mClose').onclick = () => $('#md').close();
+$('#mSave').onclick = async () => {
+  $('#mErr').textContent = '';
+  const b = $('#mSave'); b.disabled = true; b.textContent = 'Saving…';
+  try {
+    const r = await api('reqUpdate', { id: MR.id, status: $('#mSt').value, vendor: $('#mVend').value, expected: $('#mExp').value, remarks: $('#mRem').value });
+    $('#md').close(); showNotify('Request updated. Inform the requester:', r); loadList();
+  } catch (e) { $('#mErr').textContent = e.message; }
+  b.disabled = false; b.textContent = 'Save and notify';
+};
+
+gate(['REQUEST','REQ_MANAGE'], async () => {
+  if (!can('REQUEST')) $('#newCard').hidden = true;
+  try {
+    const [m, s, c] = await Promise.all([api('masters'), api('skuList'), api('customers')]);
+    M = m; SKUS = s.skus;
+    $('#custList').innerHTML = c.customers.map(x => `<option value="${esc(x)}">`).join('');
+    $('#nProd').innerHTML = M.products.map(p => `<option>${esc(p.name)}</option>`).join('');
+    $('#nStyle').innerHTML = M.styles.map(p => `<option>${esc(p.name)}</option>`).join('');
+    drawNewSizes();
+    if (Q.get('cust')) $('#cust').value = Q.get('cust');
+    if (Q.get('sku')) { EX = SKUS.find(p => p.parent === Q.get('sku')) || null; drawEx(); }
+    if (can('REQ_MANAGE') && !can('REQUEST')) $('#fSt').value = 'Pending';
+  } catch (e) { toast(e.message, 1); }
+  loadList();
+});
+</script></body></html>
