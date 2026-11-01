@@ -76,3 +76,10 @@ dialog::backdrop{background:rgba(24,33,43,.55)}
 .pl input{width:auto;margin:0}
 .pl.dis{opacity:.5}
 #stSeg button[data-v="Inactive"].on,#uAct button[data-v="No"].on{background:var(--red)}
+.stk{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.stk table{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}
+.stk th,.stk td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--line)}
+.stk thead th{background:var(--paper);font-weight:700}
+.stk tbody th{text-align:left;font-weight:600}
+.stk .tt{font-weight:800;background:var(--paper)}
+.stk .sumrow th,.stk .sumrow td{font-weight:800;border-bottom:0}
